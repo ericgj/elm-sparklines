@@ -7,8 +7,10 @@ module Scale.Facet exposing
     , ScalingConfig
     , chartDimensions
     , customConfig
+    , fixedScaling
     , linearConfig
     , scales
+    , scalesFixed
     , timeseriesConfig
     )
 
@@ -49,7 +51,9 @@ type alias ScalingConfig =
 
 
 type alias Scales x y =
-    { chartDimensions : ChartDimensions
+    { width : Float
+    , height : Float
+    , padding : Float
     , xScale : ContinuousScale x
     , yScale : ContinuousScale y
     }
@@ -103,6 +107,15 @@ customConfig =
     Config
 
 
+fixedScaling : ScalingConfig
+fixedScaling =
+    { xDomain = Fixed
+    , yDomain = Fixed
+    , xRange = Fixed
+    , yRange = Fixed
+    }
+
+
 emptyFloatExtent : ( Float, Float )
 emptyFloatExtent =
     ( 0.0, 0.0 )
@@ -111,6 +124,37 @@ emptyFloatExtent =
 emptyTimeExtent : ( Time.Posix, Time.Posix )
 emptyTimeExtent =
     ( Time.millisToPosix 0, Time.millisToPosix 0 )
+
+
+
+{-
+   Note that the Scaling options are ignored here, as the aim is to generate a
+   single fixed Scales for all sequences, with the range dimensions unchanged.
+-}
+
+
+scalesFixed :
+    Config x y
+    -> ChartDimensions
+    -> List (List ( x, y ))
+    -> Scales x y
+scalesFixed (Config c) dim seqs =
+    let
+        ( xseqs, yseqs ) =
+            combineListsTuple seqs
+
+        xScale =
+            scaleFixed c.xToFloat c.xDefault (c.xScale <| xRange dim) xseqs
+
+        yScale =
+            scaleFixed c.yToFloat c.yDefault (c.yScale <| yRange dim) yseqs
+    in
+    { width = dim.width
+    , height = dim.height
+    , padding = dim.padding
+    , xScale = xScale
+    , yScale = yScale
+    }
 
 
 scales :
@@ -202,7 +246,9 @@ scalesHelp (Config c) dims seqs =
             in
             List.map
                 (\dim ->
-                    { chartDimensions = dim
+                    { width = dim.width
+                    , height = dim.height
+                    , padding = dim.padding
                     , xScale = xScale dim
                     , yScale = yScale dim
                     }
@@ -219,7 +265,9 @@ scalesHelp (Config c) dims seqs =
             in
             List.map3
                 (\dim xseq yseq ->
-                    { chartDimensions = dim
+                    { width = dim.width
+                    , height = dim.height
+                    , padding = dim.padding
                     , xScale = xScale dim xseq
                     , yScale = yScale dim yseq
                     }
@@ -238,7 +286,9 @@ scalesHelp (Config c) dims seqs =
             in
             List.map2
                 (\dim yseq ->
-                    { chartDimensions = dim
+                    { width = dim.width
+                    , height = dim.height
+                    , padding = dim.padding
                     , xScale = xScale dim
                     , yScale = yScale dim yseq
                     }
@@ -256,7 +306,9 @@ scalesHelp (Config c) dims seqs =
             in
             List.map2
                 (\dim xseq ->
-                    { chartDimensions = dim
+                    { width = dim.width
+                    , height = dim.height
+                    , padding = dim.padding
                     , xScale = xScale dim xseq
                     , yScale = yScale dim
                     }
