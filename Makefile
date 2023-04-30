@@ -7,7 +7,7 @@ $(TARGET): $(SOURCES) $(EXAMPLE_SOURCES)
 	cd examples && elm make Main.elm --output=../$@
 
 build: 
-	elm make src/Sparkline.elm
+	elm make src/View/Simple.elm
 
 build-examples: $(TARGET)
 

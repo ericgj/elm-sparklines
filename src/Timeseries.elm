@@ -1,11 +1,11 @@
 module Timeseries exposing
     ( Observation
     , Series
-    , byIntervals
-    , byIntervalsInExtent
-    , byIntervalsMultiple
-    , extent
-    , extentMultiple
+    , groupByIntervals
+    , groupByIntervalsInExtent
+    , groupByIntervalsMultiple
+    , intervalExtent
+    , intervalExtentMultiple
     )
 
 import Statistics
@@ -21,8 +21,8 @@ type alias Observation =
     ( Time.Posix, Float )
 
 
-extent : Time.Interval -> Time.Zone -> Series -> ( Time.Posix, Time.Posix )
-extent tint tz seq =
+intervalExtent : Time.Interval -> Time.Zone -> Series -> ( Time.Posix, Time.Posix )
+intervalExtent tint tz seq =
     seq
         |> List.map Tuple.first
         |> Statistics.extentBy Time.posixToMillis
@@ -32,8 +32,8 @@ extent tint tz seq =
             (Time.ceiling tint tz)
 
 
-extentMultiple : Time.Interval -> Time.Zone -> List Series -> ( Time.Posix, Time.Posix )
-extentMultiple tint tz seqs =
+intervalExtentMultiple : Time.Interval -> Time.Zone -> List Series -> ( Time.Posix, Time.Posix )
+intervalExtentMultiple tint tz seqs =
     seqs
         |> List.map (List.map Tuple.first)
         |> List.filterMap (Statistics.extentBy Time.posixToMillis)
@@ -51,43 +51,43 @@ extentMultiple tint tz seqs =
             )
 
 
-byIntervals :
+groupByIntervals :
     (List Float -> Float)
     -> Time.Interval
     -> Time.Zone
     -> Series
     -> Series
-byIntervals fn tint tz seq =
+groupByIntervals fn tint tz seq =
     let
         ext =
-            extent tint tz seq
+            intervalExtent tint tz seq
     in
-    byIntervalsInExtent fn tint tz ext seq
+    groupByIntervalsInExtent fn tint tz ext seq
 
 
-byIntervalsMultiple :
+groupByIntervalsMultiple :
     (List Float -> Float)
     -> Time.Interval
     -> Time.Zone
     -> List Series
     -> List Series
-byIntervalsMultiple fn tint tz seqs =
+groupByIntervalsMultiple fn tint tz seqs =
     let
         ext =
-            extentMultiple tint tz seqs
+            intervalExtentMultiple tint tz seqs
     in
     seqs
-        |> List.map (byIntervalsInExtent fn tint tz ext)
+        |> List.map (groupByIntervalsInExtent fn tint tz ext)
 
 
-byIntervalsInExtent :
+groupByIntervalsInExtent :
     (List Float -> Float)
     -> Time.Interval
     -> Time.Zone
     -> ( Time.Posix, Time.Posix )
     -> Series
     -> Series
-byIntervalsInExtent fn tint tz ( tmin, tmax ) seq =
+groupByIntervalsInExtent fn tint tz ( tmin, tmax ) seq =
     Time.range tint 1 tz tmin (Time.add tint 1 tz tmax)
         |> List.foldr
             (\t acc ->

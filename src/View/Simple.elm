@@ -1,4 +1,4 @@
-module Sparkline exposing
+module View.Simple exposing
     ( Config
     , Highlight(..)
     , columnFacets
@@ -17,7 +17,7 @@ import List.Extra as List
 import Path exposing (Path)
 import Scale exposing (BandScale, ContinuousScale)
 import Scale.Color
-import Scale.Facet as Facet
+import Facet exposing (Scaling(..), Scale(..))
 import Shape
 import Statistics
 import Time
@@ -217,34 +217,12 @@ defaultColorPairs =
 --------------------------------------------------------------------------------
 
 
-type Scaling
-    = Fixed
-    | Free
-
-
-type FacetScale a
-    = FixedScale a
-    | FreeScales (List a)
-
-
-type alias ScalingConfig =
-    { x : Scaling
-    , y : Scaling
-    }
-
-
-type alias FacetScales x y =
-    { x : FacetScale x
-    , y : FacetScale y
-    }
-
-
-lineFacetScales :
-    ScalingConfig
+lineScales :
+    Facet.Scaling2d
     -> Config
     -> List Series
-    -> FacetScales (ContinuousScale Time.Posix) (ContinuousScale Float)
-lineFacetScales s c seqs =
+    -> Facet.Scale2d (ContinuousScale Time.Posix) (ContinuousScale Float)
+lineScales s c seqs =
     let
         ( xr, yr ) =
             ranges c
@@ -271,21 +249,15 @@ lineFacetScales s c seqs =
     { x = xsc, y = ysc }
 
 
-columnFacetScales :
-    ScalingConfig
+columnScales :
+    Facet.Scaling2d
     -> Config
     -> List Series
-    -> FacetScales (BandScale Time.Posix) (ContinuousScale Float)
-columnFacetScales s c seqs =
+    -> Facet.Scale2d (BandScale Time.Posix) (ContinuousScale Float)
+columnScales s c seqs =
     let
         ( xr, yr ) =
             ranges c
-
-        tz =
-            timeZone c
-
-        tint =
-            timeInterval c
 
         bc =
             bandConfig c
@@ -293,10 +265,10 @@ columnFacetScales s c seqs =
         xsc =
             case s.x of
                 Fixed ->
-                    FixedScale <| Facet.fixedTimeBandScale tint tz Tuple.first bc xr seqs
+                    FixedScale <| Facet.fixedTimeBandScale bc Tuple.first xr seqs
 
                 Free ->
-                    FreeScales <| Facet.freeTimeBandScales tint tz Tuple.first bc xr seqs
+                    FreeScales <| Facet.freeTimeBandScales bc Tuple.first xr seqs
 
         ysc =
             case s.y of
@@ -315,7 +287,7 @@ columnFacetScales s c seqs =
 --------------------------------------------------------------------------------
 
 
-lineFacets : ScalingConfig -> Config -> List Series -> List (Svg msg)
+lineFacets : Facet.Scaling2d -> Config -> List Series -> List (Svg msg)
 lineFacets s c seqs =
     let
         w =
@@ -325,7 +297,7 @@ lineFacets s c seqs =
             height c
 
         sc =
-            lineFacetScales s c seqs
+            lineScales s c seqs
     in
     case ( sc.x, sc.y ) of
         ( FixedScale xsc, FixedScale ysc ) ->
@@ -425,10 +397,10 @@ line c seq =
             timeZone c
 
         xsc =
-            Facet.fixedTimeScale tz Tuple.first xr [ seq ]
+            Facet.timeScale tz Tuple.first xr seq
 
         ysc =
-            Facet.fixedLinearScale Tuple.second yr [ seq ]
+            Facet.linearScale Tuple.second yr seq
 
         inner =
             lineInner Nothing xsc ysc c seq
@@ -637,7 +609,7 @@ labelAtPoint e lbl ( x, y ) =
 --------------------------------------------------------------------------------
 
 
-columnFacets : ScalingConfig -> Config -> List Series -> List (Svg msg)
+columnFacets : Facet.Scaling2d -> Config -> List Series -> List (Svg msg)
 columnFacets s c seqs =
     let
         w =
@@ -659,13 +631,13 @@ columnFacets s c seqs =
             case s.x of
                 Free ->
                     seqs
-                        |> List.map (Timeseries.byIntervals agg tint tz)
+                        |> List.map (Timeseries.groupByIntervals agg tint tz)
 
                 Fixed ->
-                    seqs |> Timeseries.byIntervalsMultiple agg tint tz
+                    seqs |> Timeseries.groupByIntervalsMultiple agg tint tz
 
         sc =
-            columnFacetScales s c seqs_
+            columnScales s c seqs_
     in
     case ( sc.x, sc.y ) of
         ( FixedScale xsc, FixedScale ysc ) ->
@@ -728,13 +700,13 @@ columns fn tint c data =
             ranges c
 
         data_ =
-            Timeseries.byIntervals fn tint tz data
+            Timeseries.groupByIntervals fn tint tz data
 
         xsc =
-            Facet.fixedTimeBandScale tint tz Tuple.first bc yr [ data_ ]
+            Facet.timeBandScale bc Tuple.first yr data_
 
         ysc =
-            Facet.fixedLinearScale Tuple.second yr [ data_ ]
+            Facet.linearScale Tuple.second yr data_
 
         inner =
             columnsInner h xsc ysc c data_
