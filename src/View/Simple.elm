@@ -3,13 +3,15 @@ module View.Simple exposing
     , Highlight(..)
     , columnFacets
     , columns
+    , columnsConfig
     , defaultColorPairs
-    , defaultColumnsConfig
-    , defaultLineConfig
     , line
+    , lineConfig
     , lineFacets
     , lines
+    , withBandConfig
     , withHighlight
+    , withPadding
     )
 
 import Color exposing (Color)
@@ -48,7 +50,6 @@ type alias ConfigData =
     , interval : Time.Interval
     , aggregate : List Float -> Float
     , highlight : Highlight
-    , label : Maybe (( Time.Posix, Float ) -> String)
     , appearance : AppearanceConfig
     , css : CssConfig
     }
@@ -71,7 +72,6 @@ type Highlight
 type alias AppearanceConfig =
     { width : Float
     , color : ( Color, Color )
-    , labelPadding : TypedSvg.Types.Length
     , bandPaddingInner : Float
     , bandPaddingOuter : Float
     , bandAlign : Float
@@ -136,33 +136,31 @@ bandConfig (Config c) =
 -- CONSTRUCTORS
 
 
-defaultLineConfig : Time.Zone -> Float -> Float -> Config
-defaultLineConfig z w h =
+lineConfig : Time.Zone -> Float -> Float -> Config
+lineConfig z w h =
     Config
         { width = w
         , height = h
-        , padding = 10.0
+        , padding = 0.0
         , timeZone = z
         , interval = Time.Day
         , aggregate = List.sum
         , highlight = NoHighlight
-        , label = Nothing
         , appearance = defaultLineAppearanceConfig
         , css = defaultCssConfig
         }
 
 
-defaultColumnsConfig : (List Float -> Float) -> Time.Interval -> Time.Zone -> Float -> Float -> Config
-defaultColumnsConfig fn tint z w h =
+columnsConfig : (List Float -> Float) -> Time.Interval -> Time.Zone -> Float -> Float -> Config
+columnsConfig fn tint z w h =
     Config
         { width = w
         , height = h
-        , padding = 10.0
+        , padding = 0.0
         , timeZone = z
         , interval = tint
         , aggregate = fn
         , highlight = NoHighlight
-        , label = Nothing
         , appearance = defaultColumnsAppearanceConfig
         , css = defaultCssConfig
         }
@@ -172,7 +170,6 @@ defaultLineAppearanceConfig : AppearanceConfig
 defaultLineAppearanceConfig =
     { width = 1.0
     , color = ( Color.rgb 0 0 0, Color.rgb 1 0 0 )
-    , labelPadding = Em 0.35
     , bandPaddingInner = 0.0
     , bandPaddingOuter = 0.0
     , bandAlign = 0.5
@@ -183,7 +180,6 @@ defaultColumnsAppearanceConfig : AppearanceConfig
 defaultColumnsAppearanceConfig =
     { width = 1.0
     , color = ( Color.rgba 0 0 0 0.75, Color.rgb 1 0 0 )
-    , labelPadding = Em 0.35
     , bandPaddingInner = 0.0
     , bandPaddingOuter = 0.0
     , bandAlign = 0.5
@@ -212,9 +208,28 @@ adjustColorAlpha a =
         >> Color.fromRgba
 
 
+withPadding : Float -> Config -> Config
+withPadding p (Config c) =
+    Config { c | padding = p }
+
+
 withHighlight : Highlight -> Config -> Config
 withHighlight h (Config c) =
     Config { c | highlight = h }
+
+
+withBandConfig : Scale.BandConfig -> Config -> Config
+withBandConfig bc (Config c) =
+    Config { c | appearance = updateAppearanceBandConfig bc c.appearance }
+
+
+updateAppearanceBandConfig : Scale.BandConfig -> AppearanceConfig -> AppearanceConfig
+updateAppearanceBandConfig bc ac =
+    { ac
+        | bandPaddingInner = bc.paddingInner
+        , bandPaddingOuter = bc.paddingOuter
+        , bandAlign = bc.align
+    }
 
 
 
@@ -580,17 +595,6 @@ pointToCircle e fillcolor radius ( x, y ) =
         ]
 
 
-labelAtPoint : Bem.Element -> String -> ( Float, Float ) -> Svg msg
-labelAtPoint e lbl ( x, y ) =
-    S.text_
-        [ e |> element
-        , SA.transform [ Translate x y ]
-        , SA.dy (Em (y - 0.35))
-        , SA.textAnchor AnchorMiddle
-        ]
-        [ text lbl ]
-
-
 
 --------------------------------------------------------------------------------
 -- COLUMN VIEWS
@@ -669,9 +673,12 @@ columnFacets s c seqs =
                 seqs_
 
 
-columns : (List Float -> Float) -> Time.Interval -> Config -> Series -> Svg msg
-columns fn tint c data =
+columns : Config -> Series -> Svg msg
+columns c data =
     let
+        tint =
+            timeInterval c
+
         tz =
             timeZone c
 
@@ -687,11 +694,14 @@ columns fn tint c data =
         ( xr, yr ) =
             ranges c
 
+        fn =
+            aggregate c
+
         data_ =
             Timeseries.groupByIntervals fn tint tz data
 
         xsc =
-            Facet.timeBandScale bc Tuple.first yr data_
+            Facet.timeBandScale bc Tuple.first xr data_
 
         ysc =
             Facet.linearScale Tuple.second yr data_
@@ -744,20 +754,20 @@ columnInner :
     -> Series
     -> Observation
     -> Svg msg
-columnInner e ( cbar, chigh ) h pad xsc ysc highlights ( x_, y_ ) =
+columnInner e ( cbar, chigh ) h pad xsc ysc highlights ( x, y ) =
     let
         ishigh =
             highlights
                 |> List.any
-                    (\( xh, _ ) -> Time.posixToMillis xh == Time.posixToMillis x_)
+                    (\( xh, _ ) -> Time.posixToMillis xh == Time.posixToMillis x)
     in
     S.g
         [ e |> elementList [ ( "highlighted", ishigh ) ] ]
         [ S.rect
-            [ SA.x <| Px <| Scale.convert xsc x_
-            , SA.y <| Px <| Scale.convert ysc y_
+            [ SA.x <| Px <| Scale.convert xsc x
+            , SA.y <| Px <| Scale.convert ysc y
             , SA.width <| Px <| Scale.bandwidth xsc
-            , SA.height <| Px <| h - Scale.convert ysc y_ - 2 * pad
+            , SA.height <| Px <| (h - Scale.convert ysc y) - (2 * pad)
             , SA.fill <|
                 Paint <|
                     if ishigh then

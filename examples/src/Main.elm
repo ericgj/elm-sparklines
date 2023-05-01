@@ -37,6 +37,7 @@ type alias ModelData =
     , simpleLine : Switch ()
     , simpleLines : Switch ()
     , simpleLineFacetsFreeY : Switch ()
+    , simpleColumns : Switch ()
     }
 
 
@@ -59,6 +60,7 @@ init _ =
         , simpleLine = switchOff ()
         , simpleLines = switchOff ()
         , simpleLineFacetsFreeY = switchOff ()
+        , simpleColumns = switchOff ()
         }
     , loadData
     )
@@ -76,6 +78,8 @@ type Msg
     | UpdateSimpleLines ()
     | ToggleSimpleLineFacetsFreeY
     | UpdateSimpleLineFacetsFreeY ()
+    | ToggleSimpleColumns
+    | UpdateSimpleColumns ()
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -108,6 +112,12 @@ updateNoCmd msg model =
             Model s { m | simpleLineFacetsFreeY = toggle m.simpleLineFacetsFreeY }
 
         ( UpdateSimpleLineFacetsFreeY _, _ ) ->
+            model
+
+        ( ToggleSimpleColumns, Model s m ) ->
+            Model s { m | simpleColumns = toggle m.simpleColumns }
+
+        ( UpdateSimpleColumns _, _ ) ->
             model
 
 
@@ -179,6 +189,23 @@ view (Model st m) =
                 )
                 ToggleSimpleLineFacetsFreeY
                 UpdateSimpleLineFacetsFreeY
+        , m.simpleColumns
+            |> viewSwitch
+                b
+                "Simple columns"
+                (\_ ->
+                    let
+                        series =
+                            totalSeries m.timeZone m.data
+                    in
+                    div []
+                        -- [ text <| Debug.toString series
+                        [ Example.Simple.line m.timeZone series
+                        , Example.Simple.columns m.timeZone series
+                        ]
+                )
+                ToggleSimpleColumns
+                UpdateSimpleColumns
         ]
 
 
@@ -216,6 +243,11 @@ totalSeries =
     selectSeries (\i -> (i.totalM + i.totalF) |> toFloat)
 
 
+totalSeriesWithoutGrouping : Time.Zone -> List Incarceration -> Series
+totalSeriesWithoutGrouping =
+    selectSeriesWithoutGrouping (\i -> (i.totalM + i.totalF) |> toFloat)
+
+
 maleTotalSeries : Time.Zone -> List Incarceration -> Series
 maleTotalSeries =
     selectSeries (\i -> i.totalM |> toFloat)
@@ -248,13 +280,18 @@ maleWhiteSeries =
 
 selectSeries : (Incarceration -> Float) -> Time.Zone -> List Incarceration -> Series
 selectSeries fn tz data =
+    selectSeriesWithoutGrouping fn tz data
+        |> Timeseries.groupByIntervals List.sum Time.Year tz
+
+
+selectSeriesWithoutGrouping : (Incarceration -> Float) -> Time.Zone -> List Incarceration -> Series
+selectSeriesWithoutGrouping fn tz data =
     data
         |> List.filter (\i -> i.region == USTotal)
         |> List.map
             (\i ->
                 ( yearToPosix tz i.year, fn i )
             )
-        |> Timeseries.groupByIntervals List.sum Time.Year tz
 
 
 yearToPosix : Time.Zone -> Int -> Time.Posix
