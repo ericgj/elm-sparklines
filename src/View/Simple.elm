@@ -9,17 +9,18 @@ module View.Simple exposing
     , line
     , lineFacets
     , lines
+    , withHighlight
     )
 
 import Color exposing (Color)
-import Html.Bem as Bem exposing (element, elementList)
+import Facet exposing (Scale(..), Scaling(..))
 import List.Extra as List
 import Path exposing (Path)
 import Scale exposing (BandScale, ContinuousScale)
 import Scale.Color
-import Facet exposing (Scaling(..), Scale(..))
 import Shape
 import Statistics
+import Svg.Bem as Bem exposing (element, elementList)
 import Time
 import Time.Extra as Time
 import Timeseries exposing (Observation, Series)
@@ -197,18 +198,23 @@ defaultCssConfig =
 
 defaultColorPairs : List ( Color, Color )
 defaultColorPairs =
-    Scale.Color.paired
-        |> List.foldr
-            (\c ( mlast, pairs ) ->
-                case mlast of
-                    Nothing ->
-                        ( Just c, pairs )
-
-                    Just last ->
-                        ( Nothing, ( last, c ) :: pairs )
+    Scale.Color.category10
+        |> List.map
+            (\c ->
+                ( adjustColorAlpha 0.7 c, c )
             )
-            ( Nothing, [] )
-        |> Tuple.second
+
+
+adjustColorAlpha : Float -> Color -> Color
+adjustColorAlpha a =
+    Color.toRgba
+        >> (\rec -> { rec | alpha = rec.alpha * a })
+        >> Color.fromRgba
+
+
+withHighlight : Highlight -> Config -> Config
+withHighlight h (Config c) =
+    Config { c | highlight = h }
 
 
 
@@ -366,7 +372,10 @@ lines cpairs c seqs =
             seqs
                 |> List.length
                 |> List.range 0
-                |> List.map (\i -> List.cycle i cpairs |> List.head)
+                |> List.map
+                    (\i ->
+                        List.cycle (i + 1) cpairs |> List.drop i |> List.head
+                    )
 
         inners =
             List.map2
@@ -449,20 +458,14 @@ lineInner mcpair xsc ysc (Config c) data =
         highlights =
             data |> selectHighlights c.highlight
 
-        circlesWithLabels =
-            case c.label of
-                Nothing ->
-                    []
-
-                Just render ->
-                    labelledCircles
-                        b
-                        highlightcolor
-                        (linewidth * 2.0)
-                        render
-                        xsc
-                        ysc
-                        highlights
+        circles =
+            highlightCircles
+                b
+                highlightcolor
+                (linewidth * 2.0)
+                xsc
+                ysc
+                highlights
     in
     S.g
         [ e |> element
@@ -474,7 +477,7 @@ lineInner mcpair xsc ysc (Config c) data =
             , SA.strokeWidth <| Px linewidth
             , SA.fill PaintNone
             ]
-            :: circlesWithLabels
+            :: circles
         )
 
 
@@ -530,51 +533,36 @@ selectHighlights h data =
             data |> Statistics.peaks Tuple.second spec
 
 
-labelledCircles :
+highlightCircles :
     Bem.Block
     -> Color
     -> Float
-    -> (( Time.Posix, Float ) -> String)
     -> ContinuousScale Time.Posix
     -> ContinuousScale Float
     -> Series
     -> List (Svg msg)
-labelledCircles b fillcolor radius tolabel xsc ysc data =
+highlightCircles b fillcolor radius xsc ysc data =
     let
         points =
             data |> scaledPoints xsc ysc
-
-        lbls =
-            data |> List.map tolabel
     in
-    List.map2 (labelledCircle b fillcolor radius)
-        lbls
-        points
+    points
+        |> List.map (Maybe.map (highlightCircle b fillcolor radius))
         |> List.filterMap identity
 
 
-labelledCircle : Bem.Block -> Color -> Float -> String -> Maybe ( Float, Float ) -> Maybe (Svg msg)
-labelledCircle b fillcolor radius lbl mpoint =
-    case mpoint of
-        Nothing ->
-            Nothing
+highlightCircle : Bem.Block -> Color -> Float -> ( Float, Float ) -> Svg msg
+highlightCircle b fillcolor radius ( x, y ) =
+    let
+        e =
+            b.element "highlight"
 
-        Just ( x, y ) ->
-            let
-                e =
-                    b.element "highlight"
-
-                ep =
-                    b.element "point"
-
-                el =
-                    b.element "label"
-            in
-            Just <|
-                S.g [ e |> element ]
-                    [ pointToCircle ep fillcolor radius ( x, y )
-                    , labelAtPoint el lbl ( x, y )
-                    ]
+        ep =
+            b.element "point"
+    in
+    S.g [ e |> element ]
+        [ pointToCircle ep fillcolor radius ( x, y )
+        ]
 
 
 pointToCircle : Bem.Element -> Color -> Float -> ( Float, Float ) -> Svg msg

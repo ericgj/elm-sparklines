@@ -4,7 +4,7 @@ TEST_SOURCES = $(shell find tests/ -type f -name '*.elm')
 TARGET = examples/elm.js
 
 $(TARGET): $(SOURCES) $(EXAMPLE_SOURCES)  
-	cd examples && elm make Main.elm --output=../$@
+	cd examples && elm make src/Main.elm --output=../$@
 
 build: 
 	elm make src/View/Simple.elm

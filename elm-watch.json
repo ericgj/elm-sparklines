@@ -1,0 +1,10 @@
+{
+    "targets": {
+        "My target name": {
+            "inputs": [
+                "examples/src/Main.elm"
+            ],
+            "output": "examples/elm.js"
+        }
+    }
+}
