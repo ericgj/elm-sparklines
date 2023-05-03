@@ -9,37 +9,37 @@ import Timeseries exposing (Series)
 import View.Simple exposing (Highlight(..))
 
 
-line : Time.Zone -> Series -> Html msg
-line tz data =
+line : Time.Interval -> Time.Zone -> Series -> Html msg
+line tint tz data =
     let
         c =
-            View.Simple.lineConfig tz 100 40
+            View.Simple.lineConfig tint tz 100 40
                 |> View.Simple.withPadding 5.0
                 |> View.Simple.withHighlight HighlightMinMax
     in
     div [ style "width" "200px" ]
-        [ View.Simple.line c data
+        [ View.Simple.line c Nothing data
         ]
 
 
-lines : Time.Zone -> List Series -> Html msg
-lines tz datas =
+lines : Time.Interval -> Time.Zone -> List Series -> Html msg
+lines tint tz datas =
     let
         c =
-            View.Simple.lineConfig tz 100 40
+            View.Simple.lineConfig tint tz 100 40
                 |> View.Simple.withPadding 5.0
                 |> View.Simple.withHighlight HighlightMinMax
     in
     div [ style "width" "200px" ]
-        [ View.Simple.lines View.Simple.defaultColorPairs c datas
+        [ View.Simple.lines View.Simple.defaultColorPairs c Nothing datas
         ]
 
 
-lineFacetsFreeY : Time.Zone -> List Series -> Html msg
-lineFacetsFreeY tz datas =
+lineFacetsFreeY : Time.Interval -> Time.Zone -> List Series -> Html msg
+lineFacetsFreeY tint tz datas =
     let
         c =
-            View.Simple.lineConfig tz 100 50
+            View.Simple.lineConfig tint tz 100 50
                 |> View.Simple.withPadding 5.0
                 |> View.Simple.withHighlight HighlightMinMax
     in
@@ -47,15 +47,16 @@ lineFacetsFreeY tz datas =
         (View.Simple.lineFacets
             { x = Fixed, y = Free }
             c
+            Nothing
             datas
         )
 
 
-columns : Time.Zone -> Series -> Html msg
-columns tz data =
+columns : Time.Interval -> Time.Zone -> Series -> Html msg
+columns tint tz data =
     let
         c =
-            View.Simple.columnsConfig List.sum Time.Year tz 100 40
+            View.Simple.columnsConfig List.sum tint tz 100 40
                 |> View.Simple.withPadding 5.0
                 |> View.Simple.withHighlight HighlightMinMax
                 |> View.Simple.withBandConfig

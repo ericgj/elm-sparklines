@@ -2,6 +2,7 @@ module Main exposing (main)
 
 import Browser
 import Data.Incarceration as Incarceration exposing (Incarceration, Region(..))
+import Example.Brush
 import Example.Simple
 import Html exposing (..)
 import Html.Attributes exposing (classList, style)
@@ -18,7 +19,7 @@ main =
     Browser.element
         { init = init
         , update = update
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         , view = view
         }
 
@@ -38,6 +39,7 @@ type alias ModelData =
     , simpleLines : Switch ()
     , simpleLineFacetsFreeY : Switch ()
     , simpleColumns : Switch ()
+    , brushLine : Switch Example.Brush.Model
     }
 
 
@@ -53,6 +55,10 @@ type HttpState
 
 init : () -> ( Model, Cmd Msg )
 init _ =
+    let
+        frame =
+            { height = 80, width = 200, padding = 5 }
+    in
     ( Model
         Loading
         { data = []
@@ -61,6 +67,7 @@ init _ =
         , simpleLines = switchOff ()
         , simpleLineFacetsFreeY = switchOff ()
         , simpleColumns = switchOff ()
+        , brushLine = switchOff <| Example.Brush.init frame
         }
     , loadData
     )
@@ -73,13 +80,12 @@ init _ =
 type Msg
     = Received (Result Http.Error (List Incarceration))
     | ToggleSimpleLine
-    | UpdateSimpleLine ()
     | ToggleSimpleLines
-    | UpdateSimpleLines ()
     | ToggleSimpleLineFacetsFreeY
-    | UpdateSimpleLineFacetsFreeY ()
     | ToggleSimpleColumns
-    | UpdateSimpleColumns ()
+    | ToggleBrushLine
+    | UpdateBrushLine Example.Brush.Msg
+    | NoOp
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -99,31 +105,35 @@ updateNoCmd msg model =
         ( ToggleSimpleLine, Model s m ) ->
             Model s { m | simpleLine = toggle m.simpleLine }
 
-        ( UpdateSimpleLine _, _ ) ->
-            model
-
         ( ToggleSimpleLines, Model s m ) ->
             Model s { m | simpleLines = toggle m.simpleLines }
-
-        ( UpdateSimpleLines _, _ ) ->
-            model
 
         ( ToggleSimpleLineFacetsFreeY, Model s m ) ->
             Model s { m | simpleLineFacetsFreeY = toggle m.simpleLineFacetsFreeY }
 
-        ( UpdateSimpleLineFacetsFreeY _, _ ) ->
-            model
-
         ( ToggleSimpleColumns, Model s m ) ->
             Model s { m | simpleColumns = toggle m.simpleColumns }
 
-        ( UpdateSimpleColumns _, _ ) ->
+        ( ToggleBrushLine, Model s m ) ->
+            Model s { m | brushLine = toggle m.brushLine }
+
+        ( UpdateBrushLine submsg, Model s m ) ->
+            Model s { m | brushLine = switchMap (Example.Brush.update submsg) m.brushLine }
+
+        ( NoOp, _ ) ->
             model
 
 
 noCmd : a -> ( a, Cmd x )
 noCmd a =
     ( a, Cmd.none )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions (Model _ m) =
+    [ Example.Brush.subscriptions (switchGet m.brushLine) |> Sub.map UpdateBrushLine
+    ]
+        |> Sub.batch
 
 
 
@@ -157,29 +167,31 @@ view (Model st m) =
                 b
                 "Simple line"
                 (\_ ->
-                    Example.Simple.line m.timeZone (totalSeries m.timeZone m.data)
+                    Example.Simple.line Time.Year m.timeZone (totalSeries m.timeZone m.data)
                 )
                 ToggleSimpleLine
-                UpdateSimpleLine
+                (\_ -> NoOp)
         , m.simpleLines
             |> viewSwitch
                 b
                 "Simple lines"
                 (\_ ->
                     Example.Simple.lines
+                        Time.Year
                         m.timeZone
                         [ femaleBlackSeries m.timeZone m.data
                         , femaleWhiteSeries m.timeZone m.data
                         ]
                 )
                 ToggleSimpleLines
-                UpdateSimpleLines
+                (\_ -> NoOp)
         , m.simpleLineFacetsFreeY
             |> viewSwitch
                 b
                 "Simple line facets, free Y"
                 (\_ ->
                     Example.Simple.lineFacetsFreeY
+                        Time.Year
                         m.timeZone
                         [ maleBlackSeries m.timeZone m.data
                         , maleWhiteSeries m.timeZone m.data
@@ -188,7 +200,7 @@ view (Model st m) =
                         ]
                 )
                 ToggleSimpleLineFacetsFreeY
-                UpdateSimpleLineFacetsFreeY
+                (\_ -> NoOp)
         , m.simpleColumns
             |> viewSwitch
                 b
@@ -199,13 +211,22 @@ view (Model st m) =
                             totalSeries m.timeZone m.data
                     in
                     div []
-                        -- [ text <| Debug.toString series
-                        [ Example.Simple.line m.timeZone series
-                        , Example.Simple.columns m.timeZone series
+                        [ Example.Simple.columns Time.Year m.timeZone series
                         ]
                 )
                 ToggleSimpleColumns
-                UpdateSimpleColumns
+                (\_ -> NoOp)
+        , m.brushLine
+            |> viewSwitch
+                b
+                "Line with brushing"
+                (Example.Brush.line
+                    Time.Year
+                    m.timeZone
+                    (totalSeries m.timeZone m.data)
+                )
+                ToggleBrushLine
+                UpdateBrushLine
         ]
 
 
@@ -320,6 +341,11 @@ switchOff a =
 switchMap : (a -> b) -> Switch a -> Switch b
 switchMap fn (Switch ( a, st )) =
     Switch ( fn a, st )
+
+
+switchGet : Switch a -> a
+switchGet (Switch ( a, _ )) =
+    a
 
 
 toggle : Switch a -> Switch a
