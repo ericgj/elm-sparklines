@@ -59,7 +59,10 @@ line tint tz data { frame, brush } =
             View.Simple.lineConfig tint tz frame.width frame.height
                 |> View.Simple.withPadding frame.padding
                 |> View.Simple.withHighlight HighlightMinMax
-                |> View.Simple.withBrush UpdateBrush
+                |> View.Simple.withBrushLabels
+                    UpdateBrush
+                    View.Simple.defaultBrushingAppearance
+                    View.Simple.defaultBrushingLabels
 
         wstr =
             frame.width |> round |> String.fromInt

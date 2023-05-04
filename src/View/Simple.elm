@@ -1,9 +1,13 @@
 module View.Simple exposing
-    ( Config
+    ( BrushingAppearanceConfig
+    , BrushingLabelsConfig
+    , Config
     , Highlight(..)
     , columnFacets
     , columns
     , columnsConfig
+    , defaultBrushingAppearance
+    , defaultBrushingLabels
     , defaultColorPairs
     , line
     , lineConfig
@@ -12,6 +16,9 @@ module View.Simple exposing
     , selectBrushed
     , withBandConfig
     , withBrush
+    , withBrushLabels
+    , withBrushLabelsX
+    , withBrushLabelsY
     , withHighlight
     , withPadding
     )
@@ -31,7 +38,7 @@ import Time.Extra as Time
 import Timeseries exposing (Observation, Series)
 import TypedSvg as S
 import TypedSvg.Attributes as SA
-import TypedSvg.Core exposing (Svg, text)
+import TypedSvg.Core exposing (Attribute, Svg, text)
 import TypedSvg.Types
     exposing
         ( AlignmentBaseline(..)
@@ -62,7 +69,7 @@ type alias ConfigData msg =
     , interval : Time.Interval
     , aggregate : List Float -> Float
     , highlight : Highlight
-    , onBrush : Maybe (OnBrush -> msg)
+    , brushing : Brushing msg
     , appearance : AppearanceConfig
     , css : CssConfig
     }
@@ -82,17 +89,49 @@ type Highlight
         }
 
 
+type Brushing msg
+    = NoBrush
+    | BrushNoLabels (BrushingNoLabelsData msg)
+    | BrushLabels (BrushingLabelsData msg)
+    | BrushLabelsX (BrushingLabelsData msg)
+    | BrushLabelsY (BrushingLabelsData msg)
+
+
+type alias BrushingNoLabelsData msg =
+    { onBrush : OnBrush -> msg
+    , appearance : BrushingAppearanceConfig
+    }
+
+
+type alias BrushingLabelsData msg =
+    { onBrush : OnBrush -> msg
+    , appearance : BrushingAppearanceConfig
+    , labels : BrushingLabelsConfig
+    }
+
+
 type alias AppearanceConfig =
     { width : Float
-    , color : Color
-    , highlightColor : Color
-    , selectFill : Paint
-    , selectStroke : Paint
-    , selectStrokeDashed : Bool
-    , selectLabelSize : Length
+    , color : Paint
+    , highlightColor : Paint
     , bandPaddingInner : Float
     , bandPaddingOuter : Float
     , bandAlign : Float
+    }
+
+
+type alias BrushingAppearanceConfig =
+    { area : Paint
+    , bounds : Paint
+    , boundsDashed : Bool
+    , highlight : Paint
+    }
+
+
+type alias BrushingLabelsConfig =
+    { color : Paint
+    , size : Length
+    , toString : Float -> String
     }
 
 
@@ -140,43 +179,38 @@ highlight (Config c) =
     c.highlight
 
 
+brushing : Config msg -> Brushing msg
+brushing (Config c) =
+    c.brushing
+
+
 onBrush : Config msg -> Maybe (OnBrush -> msg)
 onBrush (Config c) =
-    c.onBrush
+    case c.brushing of
+        NoBrush ->
+            Nothing
+
+        BrushNoLabels d ->
+            Just d.onBrush
+
+        BrushLabels d ->
+            Just d.onBrush
+
+        BrushLabelsX d ->
+            Just d.onBrush
+
+        BrushLabelsY d ->
+            Just d.onBrush
 
 
-color : Config msg -> Color
+color : Config msg -> Paint
 color (Config c) =
     c.appearance.color
 
 
-highlightColor : Config msg -> Color
+highlightColor : Config msg -> Paint
 highlightColor (Config c) =
     c.appearance.highlightColor
-
-
-selectFill : Config msg -> Paint
-selectFill (Config c) =
-    c.appearance.selectFill
-
-
-selectStroke : Config msg -> Paint
-selectStroke (Config c) =
-    c.appearance.selectStroke
-
-
-selectStrokeDashArray : Config msg -> String
-selectStrokeDashArray (Config c) =
-    if c.appearance.selectStrokeDashed then
-        "4 2"
-
-    else
-        ""
-
-
-selectLabelSize : Config msg -> Length
-selectLabelSize (Config c) =
-    c.appearance.selectLabelSize
 
 
 observationWidth : Config msg -> Float
@@ -218,7 +252,7 @@ lineConfig tint tz w h =
         , interval = tint
         , aggregate = List.sum
         , highlight = NoHighlight
-        , onBrush = Nothing
+        , brushing = NoBrush
         , appearance = defaultLineAppearanceConfig
         , css = defaultCssConfig
         }
@@ -234,7 +268,7 @@ columnsConfig fn tint tz w h =
         , interval = tint
         , aggregate = fn
         , highlight = NoHighlight
-        , onBrush = Nothing
+        , brushing = NoBrush
         , appearance = defaultColumnsAppearanceConfig
         , css = defaultCssConfig
         }
@@ -243,12 +277,8 @@ columnsConfig fn tint tz w h =
 defaultLineAppearanceConfig : AppearanceConfig
 defaultLineAppearanceConfig =
     { width = 1.0
-    , color = Color.rgb 0 0 0
-    , highlightColor = Color.rgb 1 0 0
-    , selectFill = Paint <| Color.rgb 1 1 0
-    , selectStroke = Paint <| Color.rgba 0 0 0 0.5
-    , selectStrokeDashed = False
-    , selectLabelSize = Rem 0.7
+    , color = Paint <| Color.rgb 0 0 0
+    , highlightColor = Paint <| Color.rgb 1 0 0
     , bandPaddingInner = 0.0
     , bandPaddingOuter = 0.0
     , bandAlign = 0.5
@@ -258,12 +288,8 @@ defaultLineAppearanceConfig =
 defaultColumnsAppearanceConfig : AppearanceConfig
 defaultColumnsAppearanceConfig =
     { width = 1.0
-    , color = Color.rgb 0 0 0
-    , highlightColor = Color.rgb 1 0 0
-    , selectFill = Paint <| Color.rgb 1 1 0
-    , selectStroke = PaintNone
-    , selectStrokeDashed = False
-    , selectLabelSize = Rem 0.7
+    , color = Paint <| Color.rgb 0 0 0
+    , highlightColor = Paint <| Color.rgb 1 0 0
     , bandPaddingInner = 0.0
     , bandPaddingOuter = 0.0
     , bandAlign = 0.5
@@ -276,12 +302,29 @@ defaultCssConfig =
     }
 
 
-defaultColorPairs : List ( Color, Color )
+defaultBrushingAppearance : BrushingAppearanceConfig
+defaultBrushingAppearance =
+    { area = Paint <| Color.rgb 1 1 0
+    , bounds = Paint <| Color.rgba 0 0 0 0.5
+    , boundsDashed = False
+    , highlight = Paint <| Color.rgb 1 0 0
+    }
+
+
+defaultBrushingLabels : BrushingLabelsConfig
+defaultBrushingLabels =
+    { color = Paint <| Color.rgb 0 0 0
+    , size = Rem 0.7
+    , toString = round >> String.fromInt
+    }
+
+
+defaultColorPairs : List ( Paint, Paint )
 defaultColorPairs =
     Scale.Color.category10
         |> List.map
             (\c ->
-                ( adjustColorAlpha 0.7 c, c )
+                ( Paint <| adjustColorAlpha 0.7 c, Paint c )
             )
 
 
@@ -302,9 +345,58 @@ withHighlight h (Config c) =
     Config { c | highlight = h }
 
 
-withBrush : (OnBrush -> msg) -> Config msg -> Config msg
-withBrush tomsg (Config c) =
-    Config { c | onBrush = Just tomsg }
+withBrush : (OnBrush -> msg) -> BrushingAppearanceConfig -> Config msg -> Config msg
+withBrush onbrush bac (Config c) =
+    let
+        br =
+            BrushNoLabels { onBrush = onbrush, appearance = bac }
+    in
+    Config { c | brushing = br }
+
+
+withBrushLabels :
+    (OnBrush -> msg)
+    -> BrushingAppearanceConfig
+    -> BrushingLabelsConfig
+    -> Config msg
+    -> Config msg
+withBrushLabels =
+    withBrushLabelsHelp BrushLabels
+
+
+withBrushLabelsX :
+    (OnBrush -> msg)
+    -> BrushingAppearanceConfig
+    -> BrushingLabelsConfig
+    -> Config msg
+    -> Config msg
+withBrushLabelsX =
+    withBrushLabelsHelp BrushLabelsX
+
+
+withBrushLabelsY :
+    (OnBrush -> msg)
+    -> BrushingAppearanceConfig
+    -> BrushingLabelsConfig
+    -> Config msg
+    -> Config msg
+withBrushLabelsY =
+    withBrushLabelsHelp BrushLabelsY
+
+
+withBrushLabelsHelp :
+    (BrushingLabelsData msg -> Brushing msg)
+    -> (OnBrush -> msg)
+    -> BrushingAppearanceConfig
+    -> BrushingLabelsConfig
+    -> Config msg
+    -> Config msg
+withBrushLabelsHelp constr onbrush bac blc (Config c) =
+    let
+        br =
+            constr { onBrush = onbrush, appearance = bac, labels = blc }
+    in
+    Config { c | brushing = br }
 
 
 withBandConfig : Scale.BandConfig -> Config msg -> Config msg
@@ -431,9 +523,9 @@ selectHighlights h data =
             data |> Statistics.peaks Tuple.second spec
 
 
-isHighlightedTime : Time.Posix -> Series -> Bool
-isHighlightedTime x =
-    List.any (\( x_, _ ) -> Time.posixToMillis x_ == Time.posixToMillis x)
+isHighlightedTimeInterval : Time.Interval -> Time.Zone -> Time.Posix -> Series -> Bool
+isHighlightedTimeInterval tint tz x =
+    List.any (\( x_, _ ) -> Time.floor tint tz x_ == Time.floor tint tz x)
 
 
 
@@ -444,43 +536,39 @@ isHighlightedTime x =
 
 extentMaybeBrushed :
     Maybe (Brush OneDimensional)
-    -> Float
     -> ContinuousScale Time.Posix
     -> Maybe ( Time.Posix, Time.Posix )
-extentMaybeBrushed mbrush pad xsc =
-    mbrush |> Maybe.andThen (\br -> extentBrushed br pad xsc)
+extentMaybeBrushed mbrush xsc =
+    mbrush |> Maybe.andThen (\br -> extentBrushed br xsc)
 
 
 selectMaybeBrushed :
     Maybe (Brush OneDimensional)
-    -> Float
     -> ContinuousScale Time.Posix
     -> Series
     -> Maybe Series
-selectMaybeBrushed mbrush pad xsc data =
-    mbrush |> Maybe.andThen (\br -> selectBrushed br pad xsc data)
+selectMaybeBrushed mbrush xsc data =
+    mbrush |> Maybe.andThen (\br -> selectBrushed br xsc data)
 
 
 selectBrushed :
     Brush OneDimensional
-    -> Float
     -> ContinuousScale Time.Posix
     -> Series
     -> Maybe Series
-selectBrushed br pad xsc data =
-    extentBrushed br pad xsc
+selectBrushed br xsc data =
+    extentBrushed br xsc
         |> Maybe.map (\ext -> selectInTimeExtent ext data)
 
 
 extentBrushed :
     Brush OneDimensional
-    -> Float
     -> ContinuousScale Time.Posix
     -> Maybe ( Time.Posix, Time.Posix )
-extentBrushed br pad xsc =
+extentBrushed br xsc =
     let
-        invert x =
-            (x - pad) |> Scale.invert xsc
+        invert =
+            Scale.invert xsc
     in
     br
         |> Brush.selection1d
@@ -499,16 +587,21 @@ selectInTimeExtent ( tmin, tmax ) =
         )
 
 
-viewBrush : Bem.Block -> Maybe (OnBrush -> msg) -> Maybe (Brush OneDimensional) -> List (Svg msg)
-viewBrush b mmsg mbrush =
+viewBrush : Bem.Block -> Float -> Maybe (OnBrush -> msg) -> Maybe (Brush OneDimensional) -> List (Svg msg)
+viewBrush b pad mmsg mbrush =
     let
         e =
             b.element "brush"
 
-        brushrect _ attrs =
+        brushrect ext attrs =
             S.rect
-                ((SA.fillOpacity <| Opacity <| 0.0)
+                ((SA.x <| Px <| ext.left)
+                    :: (SA.y <| Px <| ext.top)
+                    :: (SA.width <| Px <| ext.right - ext.left)
+                    :: (SA.height <| Px <| ext.bottom - ext.top)
+                    :: (SA.fillOpacity <| Opacity <| 0.0)
                     :: SA.shapeRendering RenderCrispEdges
+                    :: SA.transform [ Translate pad 0.0 ]
                     :: attrs
                 )
                 []
@@ -529,7 +622,91 @@ viewBrush b mmsg mbrush =
 
 
 -- -----------------------------------------------------------------------------
--- LINE VIEWS
+-- SCALING
+-- -----------------------------------------------------------------------------
+
+
+scaledPoints :
+    ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Series
+    -> List (Maybe ( Float, Float ))
+scaledPoints xsc ysc =
+    List.map (scaledPoint xsc ysc)
+
+
+scaledPoint :
+    ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Observation
+    -> Maybe ( Float, Float )
+scaledPoint xsc ysc ( x, y ) =
+    Just ( Scale.convert xsc x, Scale.convert ysc y )
+
+
+scaledAreaBounds :
+    Float
+    -> ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Series
+    -> List (Maybe ( ( Float, Float ), ( Float, Float ) ))
+scaledAreaBounds yadj xsc ysc =
+    List.map (scaledArea yadj xsc ysc)
+
+
+scaledArea :
+    Float
+    -> ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Observation
+    -> Maybe ( ( Float, Float ), ( Float, Float ) )
+scaledArea yadj xsc ysc ( x, y ) =
+    let
+        ymin =
+            Scale.rangeExtent ysc |> Tuple.first
+    in
+    Just
+        ( ( Scale.convert xsc x, ymin )
+        , ( Scale.convert xsc x, Scale.convert ysc y - yadj )
+        )
+
+
+scaledVerticalLinePoints :
+    ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Observation
+    -> List (Maybe ( Float, Float ))
+scaledVerticalLinePoints xsc ysc ( x, y ) =
+    let
+        cx =
+            Scale.convert xsc x
+    in
+    [ Just ( cx, Scale.rangeExtent ysc |> Tuple.first )
+    , Just ( cx, Scale.convert ysc y )
+    ]
+
+
+scaledHorizontalLinePoints :
+    ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Observation
+    -> List (Maybe ( Float, Float ))
+scaledHorizontalLinePoints xsc ysc ( x, y ) =
+    let
+        xmin =
+            Scale.rangeExtent xsc |> Tuple.first
+
+        cy =
+            Scale.convert ysc y
+    in
+    [ Just ( xmin, cy )
+    , Just ( Scale.convert xsc x, cy )
+    ]
+
+
+
+-- -----------------------------------------------------------------------------
+-- LINE CHARTS
 -- -----------------------------------------------------------------------------
 
 
@@ -550,8 +727,11 @@ lineFacets s c mbrush seqs =
         h =
             height c
 
+        pad =
+            padding c
+
         brush =
-            viewBrush b (onBrush c) mbrush
+            viewBrush b pad (onBrush c) mbrush
 
         sc =
             lineScales s c seqs
@@ -607,7 +787,7 @@ lineFacets s c mbrush seqs =
 
 
 lines :
-    List ( Color, Color )
+    List ( Paint, Paint )
     -> Config msg
     -> Maybe (Brush OneDimensional)
     -> List Series
@@ -622,6 +802,9 @@ lines cpairs c mbrush seqs =
 
         h =
             height c
+
+        pad =
+            padding c
 
         ( xr, yr ) =
             ranges c
@@ -653,7 +836,7 @@ lines cpairs c mbrush seqs =
                 seqs
 
         brush =
-            viewBrush b (onBrush c) mbrush
+            viewBrush b pad (onBrush c) mbrush
     in
     S.svg
         [ SA.viewBox 0 0 w h ]
@@ -672,6 +855,9 @@ line c mbrush seq =
         h =
             height c
 
+        pad =
+            padding c
+
         ( xr, yr ) =
             ranges c
 
@@ -688,7 +874,7 @@ line c mbrush seq =
             lineInner Nothing xsc ysc c mbrush seq
 
         brush =
-            viewBrush b (onBrush c) mbrush
+            viewBrush b pad (onBrush c) mbrush
     in
     S.svg
         [ SA.viewBox 0 0 w h ]
@@ -696,7 +882,7 @@ line c mbrush seq =
 
 
 lineInner :
-    Maybe ( Color, Color )
+    Maybe ( Paint, Paint )
     -> ContinuousScale Time.Posix
     -> ContinuousScale Float
     -> Config msg
@@ -714,15 +900,6 @@ lineInner mcpair xsc ysc c mbrush data =
         el =
             b.element "line"
 
-        ea =
-            b.element "selected-area"
-
-        tint =
-            timeInterval c
-
-        tz =
-            timeZone c
-
         pad =
             padding c
 
@@ -730,46 +907,21 @@ lineInner mcpair xsc ysc c mbrush data =
             mcpair
                 |> Maybe.withDefault ( color c, highlightColor c )
 
-        sfill =
-            selectFill c
-
         linewidth =
             observationWidth c
 
         highlights =
             data |> selectHighlights (highlight c)
 
-        mselectext =
-            extentMaybeBrushed mbrush pad xsc
-
-        selected =
-            mselectext
-                |> Maybe.map (\ext -> selectInTimeExtent ext data)
-                |> Maybe.withDefault []
-
-        ( hlower, hupper ) =
-            mselectext
-                |> Maybe.map
-                    (Tuple.mapBoth
-                        (\x -> isHighlightedTime x highlights)
-                        (\x -> isHighlightedTime x highlights)
-                    )
-                |> Maybe.withDefault ( False, False )
-
         linepath =
             data
                 |> scaledPoints xsc ysc
                 |> Shape.line Shape.linearCurve
 
-        areapath =
-            selected
-                |> scaledAreaBounds -1 xsc ysc
-                |> Shape.area Shape.linearCurve
-
-        mbounds =
-            selected
-                |> selectedBoundsLinesAndLabels tint tz xsc ysc
-                |> Maybe.map (viewBoundsLinesAndLabels b c hlower hupper)
+        brushoverlay =
+            mbrush
+                |> Maybe.andThen
+                    (\brush -> lineBrushOverlay b c xsc ysc brush highlights data)
 
         circles =
             highlightCircles
@@ -781,66 +933,367 @@ lineInner mcpair xsc ysc c mbrush data =
                 highlights
     in
     S.g
-        [ e |> elementIf "selected" (List.length selected > 0)
+        [ e |> element
         , SA.transform [ Translate pad pad ]
         ]
         (Path.element linepath
             [ el |> element
-            , SA.stroke <| Paint <| linecolor
+            , SA.stroke <| linecolor
             , SA.strokeWidth <| Px linewidth
             , SA.fill PaintNone
             ]
-            :: Path.element areapath
-                [ ea |> element
-                , SA.fill <| sfill
-                ]
-            :: (mbounds |> Maybe.withDefault (text ""))
+            :: (brushoverlay |> Maybe.withDefault (text ""))
             :: circles
         )
 
 
-viewBoundsLinesAndLabels :
+highlightCircles :
     Bem.Block
-    -> Config msg
-    -> Bool
-    -> Bool
-    ->
-        ( ( ( Path, ( String, Float ) ), ( Path, ( String, Float ) ) )
-        , ( ( Path, ( String, Float ) ), ( Path, ( String, Float ) ) )
-        )
-    -> Svg msg
-viewBoundsLinesAndLabels b c islowerhl isupperhl ( ( vlower, hlower ), ( vupper, hupper ) ) =
-    S.g
-        []
-        [ viewXBoundsLinesAndLabels
-            b
-            c
-            islowerhl
-            isupperhl
-            ( vlower, vupper )
-        , viewYBoundsLinesAndLabels
-            b
-            c
-            islowerhl
-            isupperhl
-            ( hlower, hupper )
+    -> Paint
+    -> Float
+    -> ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Series
+    -> List (Svg msg)
+highlightCircles b fillcolor radius xsc ysc data =
+    let
+        points =
+            data |> scaledPoints xsc ysc
+    in
+    points
+        |> List.map (Maybe.map (highlightCircle b fillcolor radius))
+        |> List.filterMap identity
+
+
+highlightCircle : Bem.Block -> Paint -> Float -> ( Float, Float ) -> Svg msg
+highlightCircle b fillcolor radius ( x, y ) =
+    let
+        e =
+            b.element "highlight"
+
+        ep =
+            b.element "point"
+    in
+    S.g [ e |> element ]
+        [ pointToCircle ep fillcolor radius ( x, y )
         ]
 
 
-viewXBoundsLinesAndLabels :
+pointToCircle : Bem.Element -> Paint -> Float -> ( Float, Float ) -> Svg msg
+pointToCircle e fillcolor radius ( x, y ) =
+    S.g [ e |> element ]
+        [ S.circle
+            [ SA.cx <| Px <| x
+            , SA.cy <| Px <| y
+            , SA.r <| Px radius
+            , SA.fill <| fillcolor
+            , SA.strokeWidth <| Px 0
+            , SA.stroke <| PaintNone
+            ]
+            []
+        ]
+
+
+
+-- -----------------------------------------------------------------------------
+-- BRUSH OVERLAY
+-- -----------------------------------------------------------------------------
+
+
+lineBrushOverlay :
     Bem.Block
+    -> Config msg
+    -> ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Brush OneDimensional
+    -> Series
+    -> Series
+    -> Maybe (Svg msg)
+lineBrushOverlay b c xsc ysc brush hdata data =
+    case brushing c of
+        NoBrush ->
+            Nothing
+
+        BrushNoLabels { appearance } ->
+            Just <|
+                lineBrushOverlayHelp appearance ( Nothing, Nothing ) b c xsc ysc brush hdata data
+
+        BrushLabels { appearance, labels } ->
+            Just <|
+                lineBrushOverlayHelp appearance ( Just labels, Just labels ) b c xsc ysc brush hdata data
+
+        BrushLabelsX { appearance, labels } ->
+            Just <|
+                lineBrushOverlayHelp appearance ( Just labels, Nothing ) b c xsc ysc brush hdata data
+
+        BrushLabelsY { appearance, labels } ->
+            Just <|
+                lineBrushOverlayHelp appearance ( Nothing, Just labels ) b c xsc ysc brush hdata data
+
+
+lineBrushOverlayHelp :
+    BrushingAppearanceConfig
+    -> ( Maybe BrushingLabelsConfig, Maybe BrushingLabelsConfig )
+    -> Bem.Block
+    -> Config msg
+    -> ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Brush OneDimensional
+    -> Series
+    -> Series
+    -> Svg msg
+lineBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
+    let
+        e =
+            b.element "brush-overlay"
+
+        ea =
+            b.element "brush-overlay-area"
+
+        tint =
+            timeInterval c
+
+        tz =
+            timeZone c
+
+        mselectext =
+            extentBrushed brush xsc
+
+        ( hlower, hupper ) =
+            mselectext
+                |> Maybe.map
+                    (Tuple.mapBoth
+                        (\x -> isHighlightedTimeInterval tint tz x hdata)
+                        (\x -> isHighlightedTimeInterval tint tz x hdata)
+                    )
+                |> Maybe.withDefault ( False, False )
+
+        selected =
+            mselectext
+                |> Maybe.map (\ext -> selectInTimeExtent ext data)
+                |> Maybe.withDefault []
+
+        brusharea =
+            selected
+                |> scaledAreaBounds -1 xsc ysc
+                |> Shape.area Shape.linearCurve
+
+        brushlabels =
+            lineBrushOverlayBoundsAndLabels
+                bapp
+                ( mxlabels, mylabels )
+                b
+                tint
+                tz
+                c
+                xsc
+                ysc
+                hlower
+                hupper
+                selected
+    in
+    S.g
+        [ e |> element ]
+        [ Path.element brusharea
+            [ ea |> element
+            , SA.fill bapp.area
+            ]
+        , brushlabels |> Maybe.withDefault (text "")
+        ]
+
+
+lineBrushOverlayBoundsAndLabels :
+    BrushingAppearanceConfig
+    -> ( Maybe BrushingLabelsConfig, Maybe BrushingLabelsConfig )
+    -> Bem.Block
+    -> Time.Interval
+    -> Time.Zone
+    -> Config msg
+    -> ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Bool
+    -> Bool
+    -> Series
+    -> Maybe (Svg msg)
+lineBrushOverlayBoundsAndLabels app ( mxlabels, mylabels ) b tint tz c xsc ysc hlower hupper selected =
+    let
+        inner ( ( ( vmin, vminl ), ( hmin, hminl ) ), ( ( vmax, vmaxl ), ( hmax, hmaxl ) ) ) =
+            case ( mxlabels, mylabels ) of
+                ( Nothing, Nothing ) ->
+                    S.g
+                        []
+                        [ brushBoundsLines app b "x" c hlower hupper ( vmin, vmax )
+                        ]
+
+                ( Just xlabels, Nothing ) ->
+                    S.g
+                        []
+                        [ brushBoundsXLinesAndLabels
+                            app
+                            xlabels
+                            b
+                            c
+                            hlower
+                            hupper
+                            ( ( vmin, vminl ), ( vmax, vmaxl ) )
+                        ]
+
+                ( Nothing, Just ylabels ) ->
+                    S.g
+                        []
+                        [ brushBoundsYLinesAndLabels
+                            app
+                            ylabels
+                            b
+                            c
+                            hlower
+                            hupper
+                            ( ( hmin, hminl ), ( hmax, hmaxl ) )
+                        ]
+
+                ( Just xlabels, Just ylabels ) ->
+                    S.g
+                        []
+                        [ brushBoundsXLinesAndLabels
+                            app
+                            xlabels
+                            b
+                            c
+                            hlower
+                            hupper
+                            ( ( vmin, vminl ), ( vmax, vmaxl ) )
+                        , brushBoundsYLinesAndLabels
+                            app
+                            ylabels
+                            b
+                            c
+                            hlower
+                            hupper
+                            ( ( hmin, hminl ), ( hmax, hmaxl ) )
+                        ]
+    in
+    selectedBoundsAndLabels tint tz xsc ysc selected
+        |> Maybe.map inner
+
+
+selectedBoundsAndLabels :
+    Time.Interval
+    -> Time.Zone
+    -> ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Series
+    ->
+        Maybe
+            ( ( ( Path, ( String, Float ) ), ( Path, ( Float, Float ) ) )
+            , ( ( Path, ( String, Float ) ), ( Path, ( Float, Float ) ) )
+            )
+selectedBoundsAndLabels tint tz xsc ysc data =
+    let
+        mext =
+            data |> Statistics.extentBy (Tuple.first >> Time.posixToMillis)
+
+        inner ( x, y ) =
+            ( ( scaledVerticalLinePoints xsc ysc ( x, y ) |> Shape.line Shape.linearCurve
+              , ( timeIntervalString tint tz x
+                , Scale.convert xsc x
+                )
+              )
+            , ( scaledHorizontalLinePoints xsc ysc ( x, y ) |> Shape.line Shape.linearCurve
+              , ( y
+                , Scale.convert ysc y
+                )
+              )
+            )
+    in
+    mext |> Maybe.map (Tuple.mapBoth inner inner)
+
+
+brushBoundsLines :
+    BrushingAppearanceConfig
+    -> Bem.Block
+    -> String
+    -> Config msg
+    -> Bool
+    -> Bool
+    -> ( Path, Path )
+    -> Svg msg
+brushBoundsLines bapp b dim c hlower hupper ( p0, p1 ) =
+    let
+        e =
+            b.element "selected-bounds"
+    in
+    S.g
+        [ e |> elementOf "dim" dim ]
+        (brushBoundsLinesInner bapp b dim c hlower hupper ( p0, p1 ))
+
+
+brushBoundsLinesInner :
+    BrushingAppearanceConfig
+    -> Bem.Block
+    -> String
+    -> Config msg
+    -> Bool
+    -> Bool
+    -> ( Path, Path )
+    -> List (Svg msg)
+brushBoundsLinesInner bapp b dim c hlower hupper ( p0, p1 ) =
+    let
+        ep =
+            b.element "selected-bound"
+
+        str =
+            bapp.bounds
+
+        hstr =
+            bapp.highlight
+
+        strdash =
+            if bapp.boundsDashed then
+                "4 2"
+
+            else
+                ""
+    in
+    [ Path.element p0
+        [ ep |> elementOfList [ ( "dim", dim ), ( "type", "lower" ) ]
+        , ep |> elementIf "highlight" hlower
+        , SA.stroke <|
+            if hlower then
+                hstr
+
+            else
+                str
+        , SA.strokeDasharray strdash
+        , SA.fill PaintNone
+        ]
+    , Path.element p1
+        [ ep |> elementOfList [ ( "dim", dim ), ( "type", "upper" ) ]
+        , ep |> elementIf "highlight" hupper
+        , SA.stroke <|
+            if hupper then
+                hstr
+
+            else
+                str
+        , SA.strokeDasharray strdash
+        , SA.fill PaintNone
+        ]
+    ]
+
+
+brushBoundsXLinesAndLabels :
+    BrushingAppearanceConfig
+    -> BrushingLabelsConfig
+    -> Bem.Block
     -> Config msg
     -> Bool
     -> Bool
     -> ( ( Path, ( String, Float ) ), ( Path, ( String, Float ) ) )
     -> Svg msg
-viewXBoundsLinesAndLabels b c islowerhl isupperhl ( ( p0, ( l0, x0 ) ), ( p1, ( l1, x1 ) ) ) =
+brushBoundsXLinesAndLabels bapp bl b c hlower hupper ( ( p0, ( l0, x0 ) ), ( p1, ( l1, x1 ) ) ) =
     let
         e =
             b.element "selected-bounds"
-
-        ep =
-            b.element "selected-bound"
 
         el =
             b.element "selected-bound-label"
@@ -860,76 +1313,89 @@ viewXBoundsLinesAndLabels b c islowerhl isupperhl ( ( p0, ( l0, x0 ) ), ( p1, ( 
         xmid =
             (w - pad * 2) / 2.0
 
-        str =
-            selectStroke c
+        x0adj =
+            if x0 <= xmid then
+                1
 
-        strdash =
-            selectStrokeDashArray c
+            else
+                -1
+
+        x1adj =
+            if x1 <= xmid then
+                1
+
+            else
+                -1
+
+        regcolor =
+            bapp.bounds
+
+        hcolor =
+            bapp.highlight
 
         fsize =
-            selectLabelSize c
+            bl.size
     in
     S.g
         [ e |> elementOf "dim" "x" ]
-        [ Path.element p0
-            [ ep |> elementOfList [ ( "dim", "x" ), ( "type", "lower" ) ]
-            , ep |> elementIf "highlight" islowerhl
-            , SA.stroke str
-            , SA.strokeDasharray strdash
-            , SA.fill PaintNone
-            ]
-        , Path.element p1
-            [ ep |> elementOfList [ ( "dim", "x" ), ( "type", "upper" ) ]
-            , ep |> elementIf "highlight" isupperhl
-            , SA.stroke str
-            , SA.strokeDasharray strdash
-            , SA.fill PaintNone
-            ]
-        , S.text_
-            [ el |> elementOfList [ ( "dim", "x" ), ( "type", "lower" ) ]
-            , el |> elementIf "highlight" islowerhl
-            , SA.transform [ Translate x0 ybaseline ]
-            , SA.textAnchor <|
-                if x0 <= xmid then
-                    AnchorStart
+        (brushBoundsLinesInner bapp b "x" c hlower hupper ( p0, p1 )
+            ++ [ S.text_
+                    [ el |> elementOfList [ ( "dim", "x" ), ( "type", "lower" ) ]
+                    , el |> elementIf "highlight" hlower
+                    , SA.transform [ Translate (x0 + x0adj) ybaseline ]
+                    , SA.textAnchor <|
+                        if x0 <= xmid then
+                            AnchorStart
 
-                else
-                    AnchorEnd
-            , SA.fontSize fsize
-            , SA.style "pointer-events: none; user-select: none"
-            ]
-            [ text l0 ]
-        , S.text_
-            [ el |> elementOfList [ ( "dim", "x" ), ( "type", "upper" ) ]
-            , el |> elementIf "highlight" isupperhl
-            , SA.transform [ Translate x1 ybaseline ]
-            , SA.textAnchor <|
-                if x1 <= xmid then
-                    AnchorStart
+                        else
+                            AnchorEnd
+                    , SA.fontSize fsize
+                    , SA.fill <|
+                        if hlower then
+                            hcolor
 
-                else
-                    AnchorEnd
-            , SA.fontSize fsize
-            , SA.style "pointer-events: none; user-select: none"
-            ]
-            [ text l1 ]
-        ]
+                        else
+                            regcolor
+                    , SA.style "pointer-events: none; user-select: none"
+                    ]
+                    [ text l0 ]
+               , S.text_
+                    [ el |> elementOfList [ ( "dim", "x" ), ( "type", "upper" ) ]
+                    , el |> elementIf "highlight" hupper
+                    , SA.transform [ Translate (x1 + x1adj) ybaseline ]
+                    , SA.textAnchor <|
+                        if x1 <= xmid then
+                            AnchorStart
+
+                        else
+                            AnchorEnd
+                    , SA.fontSize fsize
+                    , SA.fill <|
+                        if hupper then
+                            hcolor
+
+                        else
+                            regcolor
+                    , SA.style "pointer-events: none; user-select: none"
+                    ]
+                    [ text l1 ]
+               ]
+        )
 
 
-viewYBoundsLinesAndLabels :
-    Bem.Block
+brushBoundsYLinesAndLabels :
+    BrushingAppearanceConfig
+    -> BrushingLabelsConfig
+    -> Bem.Block
     -> Config msg
     -> Bool
     -> Bool
-    -> ( ( Path, ( String, Float ) ), ( Path, ( String, Float ) ) )
+    -> ( ( Path, ( Float, Float ) ), ( Path, ( Float, Float ) ) )
     -> Svg msg
-viewYBoundsLinesAndLabels b c islowerhl isupperhl ( ( p0, ( l0, y0 ) ), ( p1, ( l1, y1 ) ) ) =
+brushBoundsYLinesAndLabels bapp bl b c hlower hupper ( ( p0, ( v0, y0 ) ), ( p1, ( v1, y1 ) ) ) =
     let
         e =
             b.element "selected-bounds"
-
-        ep =
-            b.element "selected-bound"
 
         el =
             b.element "selected-bound-label"
@@ -946,130 +1412,141 @@ viewYBoundsLinesAndLabels b c islowerhl isupperhl ( ( p0, ( l0, y0 ) ), ( p1, ( 
         xbaseline =
             0.0
 
+        l0 =
+            v0 |> bl.toString
+
+        l1 =
+            v1 |> bl.toString
+
         ymid =
             (h - pad * 2) / 2.0
 
-        str =
-            selectStroke c
+        y0adj =
+            if y0 <= ymid then
+                1
 
-        strdash =
-            selectStrokeDashArray c
+            else
+                -1
+
+        y1adj =
+            if y1 <= ymid then
+                1
+
+            else
+                -1
+
+        y0align =
+            if y0 <= ymid then
+                AlignmentHanging
+
+            else
+                AlignmentBaseline
+
+        y1align =
+            if y1 <= ymid then
+                AlignmentHanging
+
+            else
+                AlignmentBaseline
+
+        regcolor =
+            bapp.bounds
+
+        hcolor =
+            bapp.highlight
 
         fsize =
-            selectLabelSize c
+            bl.size
     in
     S.g
-        [ e |> elementOf "type" "y" ]
-        [ Path.element p0
-            [ ep |> elementOfList [ ( "dim", "y" ), ( "type", "lower" ) ]
-            , ep |> elementIf "highlight" islowerhl
-            , SA.stroke str
-            , SA.strokeDasharray strdash
-            , SA.fill PaintNone
-            ]
-        , Path.element p1
-            [ ep |> elementOfList [ ( "dim", "y" ), ( "type", "upper" ) ]
-            , ep |> elementIf "highlight" isupperhl
-            , SA.stroke str
-            , SA.strokeDasharray strdash
-            , SA.fill PaintNone
-            ]
-        , S.text_
-            [ el |> elementOfList [ ( "dim", "y" ), ( "type", "lower" ) ]
-            , el |> elementIf "highlight" islowerhl
-            , SA.transform [ Translate 0.0 y0 ]
-            , SA.textAnchor AnchorStart
-            , SA.alignmentBaseline <|
-                if y0 <= ymid then
-                    AlignmentHanging
+        [ e |> elementOf "dim" "y" ]
+        (brushBoundsLinesInner bapp b "y" c hlower hupper ( p0, p1 )
+            ++ [ S.text_
+                    [ el |> elementOfList [ ( "dim", "y" ), ( "type", "lower" ) ]
+                    , el |> elementIf "highlight" hlower
+                    , SA.transform [ Translate xbaseline (y0 + y0adj) ]
+                    , SA.textAnchor AnchorStart
+                    , SA.alignmentBaseline y0align
+                    , SA.fill <|
+                        if hlower then
+                            hcolor
 
-                else
-                    AlignmentBaseline
-            , SA.fontSize fsize
-            , SA.style "pointer-events: none; user-select: none"
-            ]
-            [ text l0 ]
-        , S.text_
-            [ el |> elementOfList [ ( "dim", "y" ), ( "type", "upper" ) ]
-            , el |> elementIf "highlight" isupperhl
-            , SA.transform [ Translate 0.0 y1 ]
-            , SA.textAnchor AnchorStart
-            , SA.alignmentBaseline <|
-                if y1 <= ymid then
-                    AlignmentHanging
+                        else
+                            regcolor
+                    , SA.fontSize fsize
+                    , SA.style "pointer-events: none; user-select: none"
+                    ]
+                    [ text l0 ]
+               , S.text_
+                    [ el |> elementOfList [ ( "dim", "y" ), ( "type", "upper" ) ]
+                    , el |> elementIf "highlight" hupper
+                    , SA.transform [ Translate xbaseline (y1 + y1adj) ]
+                    , SA.textAnchor AnchorStart
+                    , SA.alignmentBaseline y1align
+                    , SA.fill <|
+                        if hupper then
+                            hcolor
 
-                else
-                    AlignmentBaseline
-            , SA.fontSize fsize
-            , SA.style "pointer-events: none; user-select: none"
-            ]
-            [ text l1 ]
-        ]
+                        else
+                            regcolor
+                    , SA.fontSize fsize
+                    , SA.style "pointer-events: none; user-select: none"
+                    ]
+                    (text l1
+                        :: percentDiffLabel
+                            [ SA.alignmentBaseline y1align
+                            , SA.fontSize fsize
+                            ]
+                            b
+                            v0
+                            v1
+                    )
+               ]
+        )
 
 
-selectedBoundsLinesAndLabels :
-    Time.Interval
-    -> Time.Zone
-    -> ContinuousScale Time.Posix
-    -> ContinuousScale Float
-    -> Series
-    ->
-        Maybe
-            ( ( ( Path, ( String, Float ) ), ( Path, ( String, Float ) ) )
-            , ( ( Path, ( String, Float ) ), ( Path, ( String, Float ) ) )
-            )
-selectedBoundsLinesAndLabels tint tz xsc ysc data =
+percentDiffLabel :
+    List (Attribute msg)
+    -> Bem.Block
+    -> Float
+    -> Float
+    -> List (Svg msg)
+percentDiffLabel attrs b y0 y1 =
     let
-        mext =
-            data |> Statistics.extentBy (Tuple.first >> Time.posixToMillis)
+        es =
+            b.element "percent-label-symbol"
 
-        inner ( x, y ) =
-            ( ( scaledVerticalLinePoints xsc ysc ( x, y ) |> Shape.line Shape.linearCurve
-              , ( timeIntervalString tint tz x
-                , Scale.convert xsc x
-                )
-              )
-            , ( scaledHorizontalLinePoints xsc ysc ( x, y ) |> Shape.line Shape.linearCurve
-              , ( y |> round |> String.fromInt
-                , Scale.convert ysc y
-                )
-              )
-            )
+        ev =
+            b.element "percent-label-value"
+
+        pct =
+            (y1 - y0) / y0
+
+        ( tag, sym ) =
+            case compare pct 0.0 of
+                EQ ->
+                    ( "eq", " " )
+
+                GT ->
+                    ( "gt", "⯅" )
+
+                LT ->
+                    ( "lt", "⯆" )
+
+        disp =
+            (pct * 100 |> round |> abs |> String.fromInt) ++ "%"
     in
-    mext |> Maybe.map (Tuple.mapBoth inner inner)
-
-
-scaledVerticalLinePoints :
-    ContinuousScale Time.Posix
-    -> ContinuousScale Float
-    -> Observation
-    -> List (Maybe ( Float, Float ))
-scaledVerticalLinePoints xsc ysc ( x, y ) =
-    let
-        cx =
-            Scale.convert xsc x
-    in
-    [ Just ( cx, Scale.rangeExtent ysc |> Tuple.first )
-    , Just ( cx, Scale.convert ysc y )
+    [ S.tspan
+        ((es |> elementOf "diff" tag) :: attrs)
+        [ text sym ]
+    , S.tspan
+        ((ev |> elementOf "diff" tag) :: attrs)
+        [ text disp ]
     ]
 
 
-scaledHorizontalLinePoints :
-    ContinuousScale Time.Posix
-    -> ContinuousScale Float
-    -> Observation
-    -> List (Maybe ( Float, Float ))
-scaledHorizontalLinePoints xsc ysc ( x, y ) =
-    let
-        xmin =
-            Scale.rangeExtent xsc |> Tuple.first
 
-        cy =
-            Scale.convert ysc y
-    in
-    [ Just ( xmin, cy )
-    , Just ( Scale.convert xsc x, cy )
-    ]
+-- TODO: Finish implementing and move somewhere generic
 
 
 timeIntervalString : Time.Interval -> Time.Zone -> Time.Posix -> String
@@ -1083,103 +1560,7 @@ timeIntervalString tint tz t =
             tparts.year |> String.fromInt
 
         _ ->
-            ""
-
-
-
--- not implemented yet
-
-
-scaledPoints :
-    ContinuousScale Time.Posix
-    -> ContinuousScale Float
-    -> Series
-    -> List (Maybe ( Float, Float ))
-scaledPoints xsc ysc =
-    List.map (scaledPoint xsc ysc)
-
-
-scaledPoint :
-    ContinuousScale Time.Posix
-    -> ContinuousScale Float
-    -> Observation
-    -> Maybe ( Float, Float )
-scaledPoint xsc ysc ( x, y ) =
-    Just ( Scale.convert xsc x, Scale.convert ysc y )
-
-
-scaledAreaBounds :
-    Float
-    -> ContinuousScale Time.Posix
-    -> ContinuousScale Float
-    -> Series
-    -> List (Maybe ( ( Float, Float ), ( Float, Float ) ))
-scaledAreaBounds yadj xsc ysc =
-    List.map (scaledArea yadj xsc ysc)
-
-
-scaledArea :
-    Float
-    -> ContinuousScale Time.Posix
-    -> ContinuousScale Float
-    -> Observation
-    -> Maybe ( ( Float, Float ), ( Float, Float ) )
-scaledArea yadj xsc ysc ( x, y ) =
-    let
-        ymin =
-            Scale.rangeExtent ysc |> Tuple.first
-    in
-    Just
-        ( ( Scale.convert xsc x, ymin )
-        , ( Scale.convert xsc x, Scale.convert ysc y - yadj )
-        )
-
-
-highlightCircles :
-    Bem.Block
-    -> Color
-    -> Float
-    -> ContinuousScale Time.Posix
-    -> ContinuousScale Float
-    -> Series
-    -> List (Svg msg)
-highlightCircles b fillcolor radius xsc ysc data =
-    let
-        points =
-            data |> scaledPoints xsc ysc
-    in
-    points
-        |> List.map (Maybe.map (highlightCircle b fillcolor radius))
-        |> List.filterMap identity
-
-
-highlightCircle : Bem.Block -> Color -> Float -> ( Float, Float ) -> Svg msg
-highlightCircle b fillcolor radius ( x, y ) =
-    let
-        e =
-            b.element "highlight"
-
-        ep =
-            b.element "point"
-    in
-    S.g [ e |> element ]
-        [ pointToCircle ep fillcolor radius ( x, y )
-        ]
-
-
-pointToCircle : Bem.Element -> Color -> Float -> ( Float, Float ) -> Svg msg
-pointToCircle e fillcolor radius ( x, y ) =
-    S.g [ e |> element ]
-        [ S.circle
-            [ SA.cx <| Px <| x
-            , SA.cy <| Px <| y
-            , SA.r <| Px radius
-            , SA.fill <| Paint <| fillcolor
-            , SA.strokeWidth <| Px 0
-            , SA.stroke <| PaintNone
-            ]
-            []
-        ]
+            "TODO"
 
 
 
@@ -1336,8 +1717,8 @@ columnsInner h xsc ysc (Config c) data =
 
 columnInner :
     Bem.Element
-    -> Color
-    -> Color
+    -> Paint
+    -> Paint
     -> Float
     -> Float
     -> BandScale Time.Posix
@@ -1360,12 +1741,11 @@ columnInner e cbar chigh h pad xsc ysc highlights ( x, y ) =
             , SA.width <| Px <| Scale.bandwidth xsc
             , SA.height <| Px <| (h - Scale.convert ysc y) - (2 * pad)
             , SA.fill <|
-                Paint <|
-                    if ishigh then
-                        chigh
+                if ishigh then
+                    chigh
 
-                    else
-                        cbar
+                else
+                    cbar
             ]
             []
         ]
