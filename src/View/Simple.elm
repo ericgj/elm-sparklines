@@ -523,9 +523,18 @@ selectHighlights h data =
             data |> Statistics.peaks Tuple.second spec
 
 
-isHighlightedTimeInterval : Time.Interval -> Time.Zone -> Time.Posix -> Series -> Bool
-isHighlightedTimeInterval tint tz x =
-    List.any (\( x_, _ ) -> Time.floor tint tz x_ == Time.floor tint tz x)
+isHighlightedTimeInterval :
+    (Time.Interval -> Time.Zone -> Time.Posix -> Time.Posix)
+    -> Time.Interval
+    -> Time.Zone
+    -> Time.Posix
+    -> Series
+    -> Bool
+isHighlightedTimeInterval fn tint tz x =
+    List.any
+        (\( x_, _ ) ->
+            fn tint tz x_ == fn tint tz x
+        )
 
 
 
@@ -601,7 +610,6 @@ viewBrush b pad mmsg mbrush =
                     :: (SA.height <| Px <| ext.bottom - ext.top)
                     :: (SA.fillOpacity <| Opacity <| 0.0)
                     :: SA.shapeRendering RenderCrispEdges
-                    :: SA.transform [ Translate pad 0.0 ]
                     :: attrs
                 )
                 []
@@ -1063,8 +1071,8 @@ lineBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
             mselectext
                 |> Maybe.map
                     (Tuple.mapBoth
-                        (\x -> isHighlightedTimeInterval tint tz x hdata)
-                        (\x -> isHighlightedTimeInterval tint tz x hdata)
+                        (\x -> isHighlightedTimeInterval Time.ceiling tint tz x hdata)
+                        (\x -> isHighlightedTimeInterval Time.floor tint tz x hdata)
                     )
                 |> Maybe.withDefault ( False, False )
 

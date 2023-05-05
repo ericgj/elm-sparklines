@@ -40,6 +40,7 @@ type alias ModelData =
     , simpleLineFacetsFreeY : Switch ()
     , simpleColumns : Switch ()
     , brushLine : Switch Example.Brush.Model
+    , brushLineFacetsFreeY : Switch Example.Brush.Model
     }
 
 
@@ -68,6 +69,7 @@ init _ =
         , simpleLineFacetsFreeY = switchOff ()
         , simpleColumns = switchOff ()
         , brushLine = switchOff <| Example.Brush.init frame
+        , brushLineFacetsFreeY = switchOff <| Example.Brush.init frame
         }
     , loadData
     )
@@ -84,7 +86,9 @@ type Msg
     | ToggleSimpleLineFacetsFreeY
     | ToggleSimpleColumns
     | ToggleBrushLine
+    | ToggleBrushLineFacetsFreeY
     | UpdateBrushLine Example.Brush.Msg
+    | UpdateBrushLineFacetsFreeY Example.Brush.Msg
     | NoOp
 
 
@@ -120,6 +124,15 @@ updateNoCmd msg model =
         ( UpdateBrushLine submsg, Model s m ) ->
             Model s { m | brushLine = switchMap (Example.Brush.update submsg) m.brushLine }
 
+        ( ToggleBrushLineFacetsFreeY, Model s m ) ->
+            Model s { m | brushLineFacetsFreeY = toggle m.brushLineFacetsFreeY }
+
+        ( UpdateBrushLineFacetsFreeY submsg, Model s m ) ->
+            Model s
+                { m
+                    | brushLineFacetsFreeY = switchMap (Example.Brush.update submsg) m.brushLineFacetsFreeY
+                }
+
         ( NoOp, _ ) ->
             model
 
@@ -132,6 +145,7 @@ noCmd a =
 subscriptions : Model -> Sub Msg
 subscriptions (Model _ m) =
     [ Example.Brush.subscriptions (switchGet m.brushLine) |> Sub.map UpdateBrushLine
+    , Example.Brush.subscriptions (switchGet m.brushLineFacetsFreeY) |> Sub.map UpdateBrushLineFacetsFreeY
     ]
         |> Sub.batch
 
@@ -227,6 +241,21 @@ view (Model st m) =
                 )
                 ToggleBrushLine
                 UpdateBrushLine
+        , m.brushLineFacetsFreeY
+            |> viewSwitch
+                b
+                "Line facets with brushing, free Y"
+                (Example.Brush.lineFacetsFreeY
+                    Time.Year
+                    m.timeZone
+                    [ maleBlackSeries m.timeZone m.data
+                    , maleWhiteSeries m.timeZone m.data
+                    , femaleBlackSeries m.timeZone m.data
+                    , femaleWhiteSeries m.timeZone m.data
+                    ]
+                )
+                ToggleBrushLineFacetsFreeY
+                UpdateBrushLineFacetsFreeY
         ]
 
 
