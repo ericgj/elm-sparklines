@@ -1,15 +1,12 @@
 module Facet exposing
-    ( ContinuousConfig
-    , BandConfig
-    , Scaling(..)
-    , Scaling2d
+    ( BandConfig
+    , ContinuousConfig
     , Scale(..)
     , Scale2d
+    , Scaling(..)
+    , Scaling2d
     , bandScale
     , continuousScale
-    , linearScale
-    , timeScale
-    , timeBandScale
     , fixedBandScale
     , fixedContinuousScale
     , fixedLinearScale
@@ -20,14 +17,15 @@ module Facet exposing
     , freeLinearScales
     , freeTimeBandScales
     , freeTimeScales
+    , linearScale
+    , timeBandScale
+    , timeScale
     )
 
-import List.Extra as List
-import Scale exposing (BandScale, ContinuousScale)
 import Dict
+import Scale exposing (BandScale, ContinuousScale)
 import Statistics
 import Time
-import Time.Extra as Time
 
 
 type Scaling
@@ -109,7 +107,6 @@ linearScale toFloat range seq =
             }
     in
     continuousScale config toFloat range seq
-    
 
 
 fixedTimeScale :
@@ -211,12 +208,15 @@ continuousScale c fn range seq =
         |> c.scale range
 
 
+
 -- BAND SCALES
+
 
 type alias BandConfig a comparable =
     { sortBy : a -> comparable
     , bandScaleConfig : Scale.BandConfig
     }
+
 
 fixedTimeBandScale :
     Scale.BandConfig
@@ -227,11 +227,12 @@ fixedTimeBandScale :
 fixedTimeBandScale bc fn range seqs =
     let
         c =
-            { sortBy = Time.posixToMillis 
+            { sortBy = Time.posixToMillis
             , bandScaleConfig = bc
             }
     in
     fixedBandScale c fn range seqs
+
 
 freeTimeBandScales :
     Scale.BandConfig
@@ -242,11 +243,12 @@ freeTimeBandScales :
 freeTimeBandScales bc fn range seqs =
     let
         c =
-            { sortBy = Time.posixToMillis 
+            { sortBy = Time.posixToMillis
             , bandScaleConfig = bc
             }
     in
     freeBandScales c fn range seqs
+
 
 timeBandScale :
     Scale.BandConfig
@@ -257,7 +259,7 @@ timeBandScale :
 timeBandScale bc fn range seq =
     let
         c =
-            { sortBy = Time.posixToMillis 
+            { sortBy = Time.posixToMillis
             , bandScaleConfig = bc
             }
     in
@@ -275,15 +277,17 @@ fixedBandScale c fn range seqs =
         vals =
             seqs
                 |> List.foldr
-                    (\seq acc -> 
-                        List.foldr (\a -> 
-                            let
-                                b = fn a
-                            in
-                            Dict.insert (c.sortBy b) b
-                        ) 
-                        acc 
-                        seq
+                    (\seq acc ->
+                        List.foldr
+                            (\a ->
+                                let
+                                    b =
+                                        fn a
+                                in
+                                Dict.insert (c.sortBy b) b
+                            )
+                            acc
+                            seq
                     )
                     Dict.empty
                 |> Dict.toList
@@ -314,19 +318,21 @@ bandScale c fn range seq =
     let
         vals =
             seq
-                |> List.foldr (\a -> 
-                    let
-                        b = fn a
-                    in
-                    Dict.insert (c.sortBy b) b
-                  ) 
+                |> List.foldr
+                    (\a ->
+                        let
+                            b =
+                                fn a
+                        in
+                        Dict.insert (c.sortBy b) b
+                    )
                     Dict.empty
                 |> Dict.toList
                 |> List.sortBy Tuple.first
                 |> List.map Tuple.second
     in
     Scale.band c.bandScaleConfig range vals
-    
+
 
 
 -- UTILS

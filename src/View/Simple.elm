@@ -596,8 +596,8 @@ selectInTimeExtent ( tmin, tmax ) =
         )
 
 
-viewBrush : Bem.Block -> Float -> Maybe (OnBrush -> msg) -> Maybe (Brush OneDimensional) -> List (Svg msg)
-viewBrush b pad mmsg mbrush =
+viewBrush : Bem.Block -> Maybe (OnBrush -> msg) -> Maybe (Brush OneDimensional) -> List (Svg msg)
+viewBrush b mmsg mbrush =
     let
         e =
             b.element "brush"
@@ -735,11 +735,8 @@ lineFacets s c mbrush seqs =
         h =
             height c
 
-        pad =
-            padding c
-
         brush =
-            viewBrush b pad (onBrush c) mbrush
+            viewBrush b (onBrush c) mbrush
 
         sc =
             lineScales s c seqs
@@ -750,9 +747,7 @@ lineFacets s c mbrush seqs =
                 (\seq ->
                     S.svg
                         [ SA.viewBox 0 0 w h ]
-                        ([ lineInner Nothing xsc ysc c mbrush seq ]
-                            ++ brush
-                        )
+                        (lineInner Nothing xsc ysc c mbrush seq :: brush)
                 )
                 seqs
 
@@ -761,9 +756,7 @@ lineFacets s c mbrush seqs =
                 (\ysc seq ->
                     S.svg
                         [ SA.viewBox 0 0 w h ]
-                        ([ lineInner Nothing xsc ysc c mbrush seq ]
-                            ++ brush
-                        )
+                        (lineInner Nothing xsc ysc c mbrush seq :: brush)
                 )
                 yscs
                 seqs
@@ -773,9 +766,7 @@ lineFacets s c mbrush seqs =
                 (\xsc seq ->
                     S.svg
                         [ SA.viewBox 0 0 w h ]
-                        ([ lineInner Nothing xsc ysc c mbrush seq ]
-                            ++ brush
-                        )
+                        (lineInner Nothing xsc ysc c mbrush seq :: brush)
                 )
                 xscs
                 seqs
@@ -785,9 +776,7 @@ lineFacets s c mbrush seqs =
                 (\xsc ysc seq ->
                     S.svg
                         [ SA.viewBox 0 0 w h ]
-                        ([ lineInner Nothing xsc ysc c mbrush seq ]
-                            ++ brush
-                        )
+                        (lineInner Nothing xsc ysc c mbrush seq :: brush)
                 )
                 xscs
                 yscs
@@ -810,9 +799,6 @@ lines cpairs c mbrush seqs =
 
         h =
             height c
-
-        pad =
-            padding c
 
         ( xr, yr ) =
             ranges c
@@ -844,7 +830,7 @@ lines cpairs c mbrush seqs =
                 seqs
 
         brush =
-            viewBrush b pad (onBrush c) mbrush
+            viewBrush b (onBrush c) mbrush
     in
     S.svg
         [ SA.viewBox 0 0 w h ]
@@ -863,9 +849,6 @@ line c mbrush seq =
         h =
             height c
 
-        pad =
-            padding c
-
         ( xr, yr ) =
             ranges c
 
@@ -882,11 +865,11 @@ line c mbrush seq =
             lineInner Nothing xsc ysc c mbrush seq
 
         brush =
-            viewBrush b pad (onBrush c) mbrush
+            viewBrush b (onBrush c) mbrush
     in
     S.svg
         [ SA.viewBox 0 0 w h ]
-        ([ inner ] ++ brush)
+        (inner :: brush)
 
 
 lineInner :
@@ -969,8 +952,7 @@ highlightCircles b fillcolor radius xsc ysc data =
             data |> scaledPoints xsc ysc
     in
     points
-        |> List.map (Maybe.map (highlightCircle b fillcolor radius))
-        |> List.filterMap identity
+        |> List.filterMap (Maybe.map (highlightCircle b fillcolor radius))
 
 
 highlightCircle : Bem.Block -> Paint -> Float -> ( Float, Float ) -> Svg msg
@@ -1130,7 +1112,7 @@ lineBrushOverlayBoundsAndLabels app ( mxlabels, mylabels ) b tint tz c xsc ysc h
                 ( Nothing, Nothing ) ->
                     S.g
                         []
-                        [ brushBoundsLines app b "x" c hlower hupper ( vmin, vmax )
+                        [ brushBoundsLines app b "x" hlower hupper ( vmin, vmax )
                         ]
 
                 ( Just xlabels, Nothing ) ->
@@ -1220,31 +1202,29 @@ brushBoundsLines :
     BrushingAppearanceConfig
     -> Bem.Block
     -> String
-    -> Config msg
     -> Bool
     -> Bool
     -> ( Path, Path )
     -> Svg msg
-brushBoundsLines bapp b dim c hlower hupper ( p0, p1 ) =
+brushBoundsLines bapp b dim hlower hupper ( p0, p1 ) =
     let
         e =
             b.element "selected-bounds"
     in
     S.g
         [ e |> elementOf "dim" dim ]
-        (brushBoundsLinesInner bapp b dim c hlower hupper ( p0, p1 ))
+        (brushBoundsLinesInner bapp b dim hlower hupper ( p0, p1 ))
 
 
 brushBoundsLinesInner :
     BrushingAppearanceConfig
     -> Bem.Block
     -> String
-    -> Config msg
     -> Bool
     -> Bool
     -> ( Path, Path )
     -> List (Svg msg)
-brushBoundsLinesInner bapp b dim c hlower hupper ( p0, p1 ) =
+brushBoundsLinesInner bapp b dim hlower hupper ( p0, p1 ) =
     let
         ep =
             b.element "selected-bound"
@@ -1346,7 +1326,7 @@ brushBoundsXLinesAndLabels bapp bl b c hlower hupper ( ( p0, ( l0, x0 ) ), ( p1,
     in
     S.g
         [ e |> elementOf "dim" "x" ]
-        (brushBoundsLinesInner bapp b "x" c hlower hupper ( p0, p1 )
+        (brushBoundsLinesInner bapp b "x" hlower hupper ( p0, p1 )
             ++ [ S.text_
                     [ el |> elementOfList [ ( "dim", "x" ), ( "type", "lower" ) ]
                     , el |> elementIf "highlight" hlower
@@ -1414,9 +1394,6 @@ brushBoundsYLinesAndLabels bapp bl b c hlower hupper ( ( p0, ( v0, y0 ) ), ( p1,
         h =
             height c
 
-        w =
-            width c
-
         xbaseline =
             0.0
 
@@ -1468,7 +1445,7 @@ brushBoundsYLinesAndLabels bapp bl b c hlower hupper ( ( p0, ( v0, y0 ) ), ( p1,
     in
     S.g
         [ e |> elementOf "dim" "y" ]
-        (brushBoundsLinesInner bapp b "y" c hlower hupper ( p0, p1 )
+        (brushBoundsLinesInner bapp b "y" hlower hupper ( p0, p1 )
             ++ [ S.text_
                     [ el |> elementOfList [ ( "dim", "y" ), ( "type", "lower" ) ]
                     , el |> elementIf "highlight" hlower
@@ -1559,12 +1536,12 @@ percentDiffLabel attrs b y0 y1 =
 
 timeIntervalString : Time.Interval -> Time.Zone -> Time.Posix -> String
 timeIntervalString tint tz t =
-    let
-        tparts =
-            Time.posixToParts tz t
-    in
     case tint of
         Time.Year ->
+            let
+                tparts =
+                    Time.posixToParts tz t
+            in
             tparts.year |> String.fromInt
 
         _ ->
