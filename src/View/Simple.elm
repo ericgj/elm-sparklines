@@ -33,7 +33,7 @@ import Scale.Band.Extra
 import Scale.Color
 import Shape
 import Statistics
-import Svg.Bem as Bem exposing (element, elementIf, elementName, elementOf, elementOfList)
+import Svg.Bem as Bem exposing (element, elementIf, elementName, elementNameMod, elementOf, elementOfList)
 import Time
 import Time.Extra as Time
 import Timeseries exposing (Observation, Series)
@@ -307,7 +307,7 @@ defaultCssConfig =
 defaultBrushingAppearance : BrushingAppearanceConfig
 defaultBrushingAppearance =
     { area = Paint <| Color.rgb 1 1 0
-    , bounds = Paint <| Color.rgba 0 0 0 0.6
+    , bounds = Paint <| Color.rgba 0 0 0 0.7
     , boundsDashed = False
     , highlight = Paint <| Color.rgb 1 0 0
     }
@@ -1012,6 +1012,9 @@ brushOverlayBoundsAndLabels bapp ( mxlabels, mylabels ) b tint tz c xsc ysc hlow
         filt =
             ST.Filter <| "url(#" ++ elementName e ++ ")"
 
+        hfilt =
+            ST.Filter <| "url(#" ++ elementNameMod e "highlight" ++ ")"
+
         inner ( ( ( vmin, vminl ), ( hmin, hminl ) ), ( ( vmax, vmaxl ), ( hmax, hmaxl ) ) ) =
             case ( mxlabels, mylabels ) of
                 ( Nothing, Nothing ) ->
@@ -1024,10 +1027,12 @@ brushOverlayBoundsAndLabels bapp ( mxlabels, mylabels ) b tint tz c xsc ysc hlow
                     S.g
                         []
                         [ brushLabelFilter (elementName e) bapp.bounds
+                        , brushLabelFilter (elementNameMod e "highlight") bapp.highlight
                         , brushBoundsXLinesAndLabels
                             bapp
                             xlabels
                             filt
+                            hfilt
                             b
                             c
                             hlower
@@ -1039,10 +1044,12 @@ brushOverlayBoundsAndLabels bapp ( mxlabels, mylabels ) b tint tz c xsc ysc hlow
                     S.g
                         []
                         [ brushLabelFilter (elementName e) bapp.bounds
+                        , brushLabelFilter (elementNameMod e "highlight") bapp.highlight
                         , brushBoundsYLinesAndLabels
                             bapp
                             ylabels
                             filt
+                            hfilt
                             b
                             c
                             hlower
@@ -1054,10 +1061,12 @@ brushOverlayBoundsAndLabels bapp ( mxlabels, mylabels ) b tint tz c xsc ysc hlow
                     S.g
                         []
                         [ brushLabelFilter (elementName e) bapp.bounds
+                        , brushLabelFilter (elementNameMod e "highlight") bapp.highlight
                         , brushBoundsXLinesAndLabels
                             bapp
                             xlabels
                             filt
+                            hfilt
                             b
                             c
                             hlower
@@ -1067,6 +1076,7 @@ brushOverlayBoundsAndLabels bapp ( mxlabels, mylabels ) b tint tz c xsc ysc hlow
                             bapp
                             ylabels
                             filt
+                            hfilt
                             b
                             c
                             hlower
@@ -1193,13 +1203,14 @@ brushBoundsXLinesAndLabels :
     BrushingAppearanceConfig
     -> BrushingLabelsConfig
     -> ST.Filter
+    -> ST.Filter
     -> Bem.Block
     -> Config msg
     -> Bool
     -> Bool
     -> ( ( Path, ( String, Float ) ), ( Path, ( String, Float ) ) )
     -> Svg msg
-brushBoundsXLinesAndLabels bapp bl filt b c hlower hupper ( ( p0, ( l0, x0 ) ), ( p1, ( l1, x1 ) ) ) =
+brushBoundsXLinesAndLabels bapp bl filt hfilt b c hlower hupper ( ( p0, ( l0, x0 ) ), ( p1, ( l1, x1 ) ) ) =
     let
         e =
             b.element "selected-bounds"
@@ -1240,7 +1251,7 @@ brushBoundsXLinesAndLabels bapp bl filt b c hlower hupper ( ( p0, ( l0, x0 ) ), 
             bl.color
 
         hcolor =
-            bapp.highlight
+            bl.color
 
         fsize =
             bl.size
@@ -1251,7 +1262,12 @@ brushBoundsXLinesAndLabels bapp bl filt b c hlower hupper ( ( p0, ( l0, x0 ) ), 
             ++ [ S.text_
                     [ el |> elementOfList [ ( "dim", "x" ), ( "type", "lower" ) ]
                     , el |> elementIf "highlight" hlower
-                    , SA.filter filt
+                    , SA.filter <|
+                        if hlower then
+                            hfilt
+
+                        else
+                            filt
                     , SA.transform [ ST.Translate (x0 + x0adj) ybaseline ]
                     , SA.textAnchor <|
                         if x0 <= xmid then
@@ -1272,7 +1288,12 @@ brushBoundsXLinesAndLabels bapp bl filt b c hlower hupper ( ( p0, ( l0, x0 ) ), 
                , S.text_
                     [ el |> elementOfList [ ( "dim", "x" ), ( "type", "upper" ) ]
                     , el |> elementIf "highlight" hupper
-                    , SA.filter filt
+                    , SA.filter <|
+                        if hupper then
+                            hfilt
+
+                        else
+                            filt
                     , SA.transform [ ST.Translate (x1 + x1adj) ybaseline ]
                     , SA.textAnchor <|
                         if x1 <= xmid then
@@ -1298,13 +1319,14 @@ brushBoundsYLinesAndLabels :
     BrushingAppearanceConfig
     -> BrushingLabelsConfig
     -> ST.Filter
+    -> ST.Filter
     -> Bem.Block
     -> Config msg
     -> Bool
     -> Bool
     -> ( ( Path, ( Float, Float ) ), ( Path, ( Float, Float ) ) )
     -> Svg msg
-brushBoundsYLinesAndLabels bapp bl filt b c hlower hupper ( ( p0, ( v0, y0 ) ), ( p1, ( v1, y1 ) ) ) =
+brushBoundsYLinesAndLabels bapp bl filt hfilt b c hlower hupper ( ( p0, ( v0, y0 ) ), ( p1, ( v1, y1 ) ) ) =
     let
         e =
             b.element "selected-bounds"
@@ -1362,7 +1384,7 @@ brushBoundsYLinesAndLabels bapp bl filt b c hlower hupper ( ( p0, ( v0, y0 ) ), 
             bl.color
 
         hcolor =
-            bapp.highlight
+            bl.color
 
         fsize =
             bl.size
@@ -1373,7 +1395,12 @@ brushBoundsYLinesAndLabels bapp bl filt b c hlower hupper ( ( p0, ( v0, y0 ) ), 
             ++ [ S.text_
                     [ el |> elementOfList [ ( "dim", "y" ), ( "type", "lower" ) ]
                     , el |> elementIf "highlight" hlower
-                    , SA.filter filt
+                    , SA.filter <|
+                        if hlower then
+                            hfilt
+
+                        else
+                            filt
                     , SA.transform [ ST.Translate xbaseline (y0 + y0adj) ]
                     , SA.textAnchor AnchorStart
                     , SA.alignmentBaseline y0align
@@ -1390,7 +1417,12 @@ brushBoundsYLinesAndLabels bapp bl filt b c hlower hupper ( ( p0, ( v0, y0 ) ), 
                , S.text_
                     [ el |> elementOfList [ ( "dim", "y" ), ( "type", "upper" ) ]
                     , el |> elementIf "highlight" hupper
-                    , SA.filter filt
+                    , SA.filter <|
+                        if hupper then
+                            hfilt
+
+                        else
+                            filt
                     , SA.transform [ ST.Translate xbaseline (y1 + y1adj) ]
                     , SA.textAnchor AnchorStart
                     , SA.alignmentBaseline y1align
