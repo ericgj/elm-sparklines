@@ -604,14 +604,19 @@ scaledArea yadj xsc ysc ( x, y ) =
 
 
 scaledVerticalLinePoints :
-    ContinuousScale Time.Posix
+    ChartScaleX
     -> ContinuousScale Float
     -> Observation
     -> List (Maybe ( Float, Float ))
 scaledVerticalLinePoints xsc ysc ( x, y ) =
     let
         cx =
-            Scale.convert xsc x
+            case xsc of
+                LineScale xsc_ ->
+                    Scale.convert xsc_ x
+
+                ColumnsScale xsc_ ->
+                    Scale.convert xsc_ x + (Scale.bandwidth xsc_ / 2.0)
     in
     [ Just ( cx, Scale.rangeExtent ysc |> Tuple.first )
     , Just ( cx, Scale.convert ysc y )
@@ -619,20 +624,41 @@ scaledVerticalLinePoints xsc ysc ( x, y ) =
 
 
 scaledHorizontalLinePoints :
-    ContinuousScale Time.Posix
+    ChartScaleX
     -> ContinuousScale Float
     -> Observation
     -> List (Maybe ( Float, Float ))
 scaledHorizontalLinePoints xsc ysc ( x, y ) =
     let
         xmin =
-            Scale.rangeExtent xsc |> Tuple.first
+            case xsc of
+                LineScale xsc_ ->
+                    Scale.rangeExtent xsc_ |> Tuple.first
+
+                ColumnsScale xsc_ ->
+                    let
+                        ( d0, d1 ) =
+                            Scale.range xsc_
+                    in
+                    if d0 < d1 then
+                        d0
+
+                    else
+                        d1
+
+        cx =
+            case xsc of
+                LineScale xsc_ ->
+                    Scale.convert xsc_ x
+
+                ColumnsScale xsc_ ->
+                    Scale.convert xsc_ x + (Scale.bandwidth xsc_ / 2.0)
 
         cy =
             Scale.convert ysc y
     in
     [ Just ( xmin, cy )
-    , Just ( Scale.convert xsc x, cy )
+    , Just ( cx, cy )
     ]
 
 
@@ -1115,14 +1141,14 @@ lineBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
                 |> Shape.area Shape.linearCurve
 
         brushlabels =
-            lineBrushOverlayBoundsAndLabels
+            brushOverlayBoundsAndLabels
                 bapp
                 ( mxlabels, mylabels )
                 b
                 tint
                 tz
                 c
-                xsc
+                (LineScale xsc)
                 ysc
                 hlower
                 hupper
@@ -1138,20 +1164,119 @@ lineBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
         ]
 
 
-lineBrushOverlayBoundsAndLabels :
+columnsBrushOverlay :
+    Bem.Block
+    -> Config msg
+    -> BandScale Time.Posix
+    -> ContinuousScale Float
+    -> Brush OneDimensional
+    -> Series
+    -> Series
+    -> Maybe (Svg msg)
+columnsBrushOverlay b c xsc ysc brush hdata data =
+    case brushing c of
+        NoBrush ->
+            Nothing
+
+        BrushNoLabels { appearance } ->
+            Just <|
+                columnsBrushOverlayHelp appearance ( Nothing, Nothing ) b c xsc ysc brush hdata data
+
+        BrushLabels { appearance, labels } ->
+            Just <|
+                columnsBrushOverlayHelp appearance ( Just labels, Just labels ) b c xsc ysc brush hdata data
+
+        BrushLabelsX { appearance, labels } ->
+            Just <|
+                columnsBrushOverlayHelp appearance ( Just labels, Nothing ) b c xsc ysc brush hdata data
+
+        BrushLabelsY { appearance, labels } ->
+            Just <|
+                columnsBrushOverlayHelp appearance ( Nothing, Just labels ) b c xsc ysc brush hdata data
+
+
+columnsBrushOverlayHelp :
+    BrushingAppearanceConfig
+    -> ( Maybe BrushingLabelsConfig, Maybe BrushingLabelsConfig )
+    -> Bem.Block
+    -> Config msg
+    -> BandScale Time.Posix
+    -> ContinuousScale Float
+    -> Brush OneDimensional
+    -> Series
+    -> Series
+    -> Svg msg
+columnsBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
+    let
+        e =
+            b.element "brush-overlay"
+
+        ec =
+            b.element "brush-overlay-column"
+
+        tint =
+            timeInterval c
+
+        tz =
+            timeZone c
+
+        h =
+            height c
+
+        pad =
+            padding c
+
+        selected =
+            selectedBrushedColumns brush xsc data
+                |> Maybe.withDefault []
+
+        ( hlower, hupper ) =
+            ( List.head selected, List.last selected )
+                |> Tuple.mapBoth
+                    (Maybe.map
+                        (\( x, _ ) -> isHighlightedTimeInterval Time.ceiling tint tz x hdata)
+                        >> Maybe.withDefault False
+                    )
+                    (Maybe.map
+                        (\( x, _ ) -> isHighlightedTimeInterval Time.floor tint tz x hdata)
+                        >> Maybe.withDefault False
+                    )
+
+        brushlabels =
+            brushOverlayBoundsAndLabels
+                bapp
+                ( mxlabels, mylabels )
+                b
+                tint
+                tz
+                c
+                (ColumnsScale xsc)
+                ysc
+                hlower
+                hupper
+                selected
+    in
+    S.g
+        [ e |> element ]
+        (List.map (columnInner ec bapp.area h pad xsc ysc hdata) selected
+            ++ (brushlabels |> Maybe.map List.singleton |> Maybe.withDefault [])
+        )
+
+
+brushOverlayBoundsAndLabels :
     BrushingAppearanceConfig
     -> ( Maybe BrushingLabelsConfig, Maybe BrushingLabelsConfig )
     -> Bem.Block
     -> Time.Interval
     -> Time.Zone
     -> Config msg
-    -> ContinuousScale Time.Posix
+    -> ChartScaleX
     -> ContinuousScale Float
     -> Bool
     -> Bool
     -> Series
     -> Maybe (Svg msg)
-lineBrushOverlayBoundsAndLabels app ( mxlabels, mylabels ) b tint tz c xsc ysc hlower hupper selected =
+brushOverlayBoundsAndLabels app ( mxlabels, mylabels ) b tint tz c xsc ysc hlower hupper selected =
     let
         inner ( ( ( vmin, vminl ), ( hmin, hminl ) ), ( ( vmax, vmaxl ), ( hmax, hmaxl ) ) ) =
             case ( mxlabels, mylabels ) of
@@ -1215,7 +1340,7 @@ lineBrushOverlayBoundsAndLabels app ( mxlabels, mylabels ) b tint tz c xsc ysc h
 selectedBoundsAndLabels :
     Time.Interval
     -> Time.Zone
-    -> ContinuousScale Time.Posix
+    -> ChartScaleX
     -> ContinuousScale Float
     -> Series
     ->
@@ -1228,10 +1353,18 @@ selectedBoundsAndLabels tint tz xsc ysc data =
         mext =
             data |> Statistics.extentBy (Tuple.first >> Time.posixToMillis)
 
+        convert =
+            case xsc of
+                LineScale xsc_ ->
+                    Scale.convert xsc_
+
+                ColumnsScale xsc_ ->
+                    Scale.convert xsc_
+
         inner ( x, y ) =
             ( ( scaledVerticalLinePoints xsc ysc ( x, y ) |> Shape.line Shape.linearCurve
               , ( timeIntervalString tint tz x
-                , Scale.convert xsc x
+                , convert x
                 )
               )
             , ( scaledHorizontalLinePoints xsc ysc ( x, y ) |> Shape.line Shape.linearCurve
@@ -1342,7 +1475,7 @@ brushBoundsXLinesAndLabels bapp bl b c hlower hupper ( ( p0, ( l0, x0 ) ), ( p1,
             width c
 
         ybaseline =
-            h - pad * 2
+            h - pad
 
         xmid =
             (w - pad * 2) / 2.0
@@ -1804,96 +1937,9 @@ columnInner e cbar h pad xsc ysc hs ( x, y ) =
         , SA.x <| Px <| Scale.convert xsc x
         , SA.y <| Px <| Scale.convert ysc y
         , SA.width <| Px <| Scale.bandwidth xsc
-        , SA.height <| Px <| (h - Scale.convert ysc y) - (2 * pad)
+        , SA.height <| Px <| (h - Scale.convert ysc y) - (pad * 2)
         , SA.fill cbar
         , SA.stroke cbar
         , SA.strokeWidth <| Px <| 0.25
         ]
         []
-
-
-columnsBrushOverlay :
-    Bem.Block
-    -> Config msg
-    -> BandScale Time.Posix
-    -> ContinuousScale Float
-    -> Brush OneDimensional
-    -> Series
-    -> Series
-    -> Maybe (Svg msg)
-columnsBrushOverlay b c xsc ysc brush hdata data =
-    case brushing c of
-        NoBrush ->
-            Nothing
-
-        BrushNoLabels { appearance } ->
-            Just <|
-                columnsBrushOverlayHelp appearance ( Nothing, Nothing ) b c xsc ysc brush hdata data
-
-        BrushLabels { appearance, labels } ->
-            Just <|
-                columnsBrushOverlayHelp appearance ( Just labels, Just labels ) b c xsc ysc brush hdata data
-
-        BrushLabelsX { appearance, labels } ->
-            Just <|
-                columnsBrushOverlayHelp appearance ( Just labels, Nothing ) b c xsc ysc brush hdata data
-
-        BrushLabelsY { appearance, labels } ->
-            Just <|
-                columnsBrushOverlayHelp appearance ( Nothing, Just labels ) b c xsc ysc brush hdata data
-
-
-columnsBrushOverlayHelp :
-    BrushingAppearanceConfig
-    -> ( Maybe BrushingLabelsConfig, Maybe BrushingLabelsConfig )
-    -> Bem.Block
-    -> Config msg
-    -> BandScale Time.Posix
-    -> ContinuousScale Float
-    -> Brush OneDimensional
-    -> Series
-    -> Series
-    -> Svg msg
-columnsBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
-    let
-        e =
-            b.element "brush-overlay"
-
-        ec =
-            b.element "brush-overlay-column"
-
-        tint =
-            timeInterval c
-
-        tz =
-            timeZone c
-
-        h =
-            height c
-
-        pad =
-            padding c
-
-        selected =
-            selectedBrushedColumns brush xsc data
-                |> Maybe.withDefault []
-
-        {-
-           brushlabels =
-               lineBrushOverlayBoundsAndLabels
-                   bapp
-                   ( mxlabels, mylabels )
-                   b
-                   tint
-                   tz
-                   c
-                   xsc
-                   ysc
-                   hlower
-                   hupper
-                   selected
-        -}
-    in
-    S.g
-        [ e |> element ]
-        (selected |> List.map (columnInner ec bapp.area h pad xsc ysc hdata))
