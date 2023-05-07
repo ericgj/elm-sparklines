@@ -28,18 +28,19 @@ import Color exposing (Color)
 import Facet exposing (Scale(..), Scaling(..))
 import List.Extra as List
 import Path exposing (Path)
-import Scale exposing (BandScale, ContinuousScale)
+import Scale exposing (BandConfig, BandScale, ContinuousScale)
+import Scale.Band.Extra
 import Scale.Color
 import Shape
 import Statistics
-import Svg.Bem as Bem exposing (element, elementIf, elementList, elementOf, elementOfList)
+import Svg.Bem as Bem exposing (element, elementIf, elementOf, elementOfList)
 import Time
 import Time.Extra as Time
 import Timeseries exposing (Observation, Series)
 import TypedSvg as S
 import TypedSvg.Attributes as SA
 import TypedSvg.Core exposing (Attribute, Svg, text)
-import TypedSvg.Types
+import TypedSvg.Types as ST
     exposing
         ( AlignmentBaseline(..)
         , AnchorAlignment(..)
@@ -47,7 +48,6 @@ import TypedSvg.Types
         , Opacity(..)
         , Paint(..)
         , ShapeRendering(..)
-        , Transform(..)
         )
 
 
@@ -539,117 +539,41 @@ isHighlightedTimeInterval fn tint tz x =
 
 
 -- -----------------------------------------------------------------------------
--- BRUSHING
--- -----------------------------------------------------------------------------
-
-
-extentMaybeBrushed :
-    Maybe (Brush OneDimensional)
-    -> ContinuousScale Time.Posix
-    -> Maybe ( Time.Posix, Time.Posix )
-extentMaybeBrushed mbrush xsc =
-    mbrush |> Maybe.andThen (\br -> extentBrushed br xsc)
-
-
-selectMaybeBrushed :
-    Maybe (Brush OneDimensional)
-    -> ContinuousScale Time.Posix
-    -> Series
-    -> Maybe Series
-selectMaybeBrushed mbrush xsc data =
-    mbrush |> Maybe.andThen (\br -> selectBrushed br xsc data)
-
-
-selectBrushed :
-    Brush OneDimensional
-    -> ContinuousScale Time.Posix
-    -> Series
-    -> Maybe Series
-selectBrushed br xsc data =
-    extentBrushed br xsc
-        |> Maybe.map (\ext -> selectInTimeExtent ext data)
-
-
-extentBrushed :
-    Brush OneDimensional
-    -> ContinuousScale Time.Posix
-    -> Maybe ( Time.Posix, Time.Posix )
-extentBrushed br xsc =
-    let
-        invert =
-            Scale.invert xsc
-    in
-    br
-        |> Brush.selection1d
-        |> Maybe.map (Tuple.mapBoth invert invert)
-
-
-selectInTimeExtent : ( Time.Posix, Time.Posix ) -> Series -> Series
-selectInTimeExtent ( tmin, tmax ) =
-    List.filter
-        (\( x, _ ) ->
-            let
-                nx =
-                    Time.posixToMillis x
-            in
-            Time.posixToMillis tmin <= nx && nx <= Time.posixToMillis tmax
-        )
-
-
-viewBrush : Bem.Block -> Maybe (OnBrush -> msg) -> Maybe (Brush OneDimensional) -> List (Svg msg)
-viewBrush b mmsg mbrush =
-    let
-        e =
-            b.element "brush"
-
-        brushrect ext attrs =
-            S.rect
-                ((SA.x <| Px <| ext.left)
-                    :: (SA.y <| Px <| ext.top)
-                    :: (SA.width <| Px <| ext.right - ext.left)
-                    :: (SA.height <| Px <| ext.bottom - ext.top)
-                    :: (SA.fillOpacity <| Opacity <| 0.0)
-                    :: SA.shapeRendering RenderCrispEdges
-                    :: attrs
-                )
-                []
-
-        inner msg br =
-            S.g
-                [ e |> element ]
-                [ Brush.view
-                    [ Brush.selectedArea brushrect ]
-                    msg
-                    br
-                ]
-    in
-    Maybe.map2 inner mmsg mbrush
-        |> Maybe.map List.singleton
-        |> Maybe.withDefault []
-
-
-
--- -----------------------------------------------------------------------------
 -- SCALING
 -- -----------------------------------------------------------------------------
+{- Note: certain functions are used by both line and columns charts,
+   this type allows polymorphism. scaledPoints is polymorphic, used by both line and columns charts.
+-}
+
+
+type ChartScaleX
+    = LineScale (ContinuousScale Time.Posix)
+    | ColumnsScale (BandScale Time.Posix)
 
 
 scaledPoints :
-    ContinuousScale Time.Posix
+    ( Float, Float )
+    -> ChartScaleX
     -> ContinuousScale Float
     -> Series
     -> List (Maybe ( Float, Float ))
-scaledPoints xsc ysc =
-    List.map (scaledPoint xsc ysc)
+scaledPoints ( xadj, yadj ) xsc ysc =
+    List.map (scaledPoint ( xadj, yadj ) xsc ysc)
 
 
 scaledPoint :
-    ContinuousScale Time.Posix
+    ( Float, Float )
+    -> ChartScaleX
     -> ContinuousScale Float
     -> Observation
     -> Maybe ( Float, Float )
-scaledPoint xsc ysc ( x, y ) =
-    Just ( Scale.convert xsc x, Scale.convert ysc y )
+scaledPoint ( xadj, yadj ) xsc ysc ( x, y ) =
+    case xsc of
+        LineScale xsc_ ->
+            Just ( Scale.convert xsc_ x + xadj, Scale.convert ysc y + yadj )
+
+        ColumnsScale xsc_ ->
+            Just ( Scale.convert xsc_ x + xadj, Scale.convert ysc y + yadj )
 
 
 scaledAreaBounds :
@@ -710,6 +634,126 @@ scaledHorizontalLinePoints xsc ysc ( x, y ) =
     [ Just ( xmin, cy )
     , Just ( Scale.convert xsc x, cy )
     ]
+
+
+
+-- -----------------------------------------------------------------------------
+-- BRUSHING
+-- -----------------------------------------------------------------------------
+
+
+extentMaybeBrushed :
+    Maybe (Brush OneDimensional)
+    -> ContinuousScale Time.Posix
+    -> Maybe ( Time.Posix, Time.Posix )
+extentMaybeBrushed mbrush xsc =
+    mbrush |> Maybe.andThen (\br -> extentBrushed br xsc)
+
+
+selectMaybeBrushed :
+    Maybe (Brush OneDimensional)
+    -> ContinuousScale Time.Posix
+    -> Series
+    -> Maybe Series
+selectMaybeBrushed mbrush xsc data =
+    mbrush |> Maybe.andThen (\br -> selectBrushed br xsc data)
+
+
+selectBrushed :
+    Brush OneDimensional
+    -> ContinuousScale Time.Posix
+    -> Series
+    -> Maybe Series
+selectBrushed br xsc data =
+    extentBrushed br xsc
+        |> Maybe.map (\ext -> selectInTimeExtent ext data)
+
+
+extentBrushed :
+    Brush OneDimensional
+    -> ContinuousScale Time.Posix
+    -> Maybe ( Time.Posix, Time.Posix )
+extentBrushed br xsc =
+    let
+        invert =
+            Scale.invert xsc
+    in
+    br
+        |> Brush.selection1d
+        |> Maybe.map (Tuple.mapBoth invert invert)
+
+
+selectedBrushedColumns :
+    Brush OneDimensional
+    -> BandScale Time.Posix
+    -> Series
+    -> Maybe Series
+selectedBrushedColumns br xsc data =
+    let
+        mext =
+            Brush.selection1d br
+
+        invert =
+            Scale.Band.Extra.invert (Scale.domain xsc) (Scale.range xsc)
+    in
+    mext
+        |> Maybe.map (Tuple.mapBoth invert invert)
+        |> Maybe.andThen
+            (\pair ->
+                case pair of
+                    ( Nothing, _ ) ->
+                        Nothing
+
+                    ( _, Nothing ) ->
+                        Nothing
+
+                    ( Just smin, Just smax ) ->
+                        Just <| selectInTimeExtent ( smin, smax ) data
+            )
+
+
+selectInTimeExtent : ( Time.Posix, Time.Posix ) -> Series -> Series
+selectInTimeExtent ( tmin, tmax ) =
+    List.filter
+        (\( x, _ ) ->
+            let
+                nx =
+                    Time.posixToMillis x
+            in
+            Time.posixToMillis tmin <= nx && nx <= Time.posixToMillis tmax
+        )
+
+
+viewBrush : Bem.Block -> Maybe (OnBrush -> msg) -> Maybe (Brush OneDimensional) -> List (Svg msg)
+viewBrush b mmsg mbrush =
+    let
+        e =
+            b.element "brush"
+
+        brushrect ext attrs =
+            S.rect
+                ((SA.x <| Px <| ext.left)
+                    :: (SA.y <| Px <| ext.top)
+                    :: (SA.width <| Px <| ext.right - ext.left)
+                    :: (SA.height <| Px <| ext.bottom - ext.top)
+                    :: (SA.fillOpacity <| Opacity <| 0.0)
+                    :: SA.shapeRendering RenderCrispEdges
+                    :: attrs
+                )
+                []
+
+        inner msg br =
+            S.g
+                [ e |> element ]
+                [ Brush.view
+                    [ Brush.selectedArea brushrect ]
+                    msg
+                    br
+                ]
+    in
+    Maybe.map2 inner mmsg mbrush
+        |> Maybe.map List.singleton
+        |> Maybe.withDefault []
 
 
 
@@ -906,7 +950,7 @@ lineInner mcpair xsc ysc c mbrush data =
 
         linepath =
             data
-                |> scaledPoints xsc ysc
+                |> scaledPoints ( 0, 0 ) (LineScale xsc) ysc
                 |> Shape.line Shape.linearCurve
 
         brushoverlay =
@@ -919,13 +963,14 @@ lineInner mcpair xsc ysc c mbrush data =
                 b
                 highlightcolor
                 (linewidth * 2.0)
-                xsc
+                ( 0, 0 )
+                (LineScale xsc)
                 ysc
                 highlights
     in
     S.g
         [ e |> element
-        , SA.transform [ Translate pad pad ]
+        , SA.transform [ ST.Translate pad pad ]
         ]
         (Path.element linepath
             [ el |> element
@@ -942,14 +987,15 @@ highlightCircles :
     Bem.Block
     -> Paint
     -> Float
-    -> ContinuousScale Time.Posix
+    -> ( Float, Float )
+    -> ChartScaleX
     -> ContinuousScale Float
     -> Series
     -> List (Svg msg)
-highlightCircles b fillcolor radius xsc ysc data =
+highlightCircles b fillcolor radius ( xadj, yadj ) xsc ysc data =
     let
         points =
-            data |> scaledPoints xsc ysc
+            data |> scaledPoints ( xadj, yadj ) xsc ysc
     in
     points
         |> List.filterMap (Maybe.map (highlightCircle b fillcolor radius))
@@ -1330,7 +1376,7 @@ brushBoundsXLinesAndLabels bapp bl b c hlower hupper ( ( p0, ( l0, x0 ) ), ( p1,
             ++ [ S.text_
                     [ el |> elementOfList [ ( "dim", "x" ), ( "type", "lower" ) ]
                     , el |> elementIf "highlight" hlower
-                    , SA.transform [ Translate (x0 + x0adj) ybaseline ]
+                    , SA.transform [ ST.Translate (x0 + x0adj) ybaseline ]
                     , SA.textAnchor <|
                         if x0 <= xmid then
                             AnchorStart
@@ -1350,7 +1396,7 @@ brushBoundsXLinesAndLabels bapp bl b c hlower hupper ( ( p0, ( l0, x0 ) ), ( p1,
                , S.text_
                     [ el |> elementOfList [ ( "dim", "x" ), ( "type", "upper" ) ]
                     , el |> elementIf "highlight" hupper
-                    , SA.transform [ Translate (x1 + x1adj) ybaseline ]
+                    , SA.transform [ ST.Translate (x1 + x1adj) ybaseline ]
                     , SA.textAnchor <|
                         if x1 <= xmid then
                             AnchorStart
@@ -1449,7 +1495,7 @@ brushBoundsYLinesAndLabels bapp bl b c hlower hupper ( ( p0, ( v0, y0 ) ), ( p1,
             ++ [ S.text_
                     [ el |> elementOfList [ ( "dim", "y" ), ( "type", "lower" ) ]
                     , el |> elementIf "highlight" hlower
-                    , SA.transform [ Translate xbaseline (y0 + y0adj) ]
+                    , SA.transform [ ST.Translate xbaseline (y0 + y0adj) ]
                     , SA.textAnchor AnchorStart
                     , SA.alignmentBaseline y0align
                     , SA.fill <|
@@ -1465,7 +1511,7 @@ brushBoundsYLinesAndLabels bapp bl b c hlower hupper ( ( p0, ( v0, y0 ) ), ( p1,
                , S.text_
                     [ el |> elementOfList [ ( "dim", "y" ), ( "type", "upper" ) ]
                     , el |> elementIf "highlight" hupper
-                    , SA.transform [ Translate xbaseline (y1 + y1adj) ]
+                    , SA.transform [ ST.Translate xbaseline (y1 + y1adj) ]
                     , SA.textAnchor AnchorStart
                     , SA.alignmentBaseline y1align
                     , SA.fill <|
@@ -1554,8 +1600,8 @@ timeIntervalString tint tz t =
 -- -----------------------------------------------------------------------------
 
 
-columnFacets : Facet.Scaling2d -> Config msg -> List Series -> List (Svg msg)
-columnFacets s c seqs =
+columnFacets : Facet.Scaling2d -> Config msg -> Maybe (Brush OneDimensional) -> List Series -> List (Svg msg)
+columnFacets s c mbrush seqs =
     let
         w =
             width c
@@ -1590,7 +1636,7 @@ columnFacets s c seqs =
                 (\seq ->
                     S.svg
                         [ SA.viewBox 0 0 w h ]
-                        [ columnsInner h xsc ysc c seq ]
+                        [ columnsInner h xsc ysc c mbrush seq ]
                 )
                 seqs_
 
@@ -1599,7 +1645,7 @@ columnFacets s c seqs =
                 (\ysc seq ->
                     S.svg
                         [ SA.viewBox 0 0 w h ]
-                        [ columnsInner h xsc ysc c seq ]
+                        [ columnsInner h xsc ysc c mbrush seq ]
                 )
                 yscs
                 seqs_
@@ -1609,7 +1655,7 @@ columnFacets s c seqs =
                 (\xsc seq ->
                     S.svg
                         [ SA.viewBox 0 0 w h ]
-                        [ columnsInner h xsc ysc c seq ]
+                        [ columnsInner h xsc ysc c mbrush seq ]
                 )
                 xscs
                 seqs_
@@ -1619,16 +1665,19 @@ columnFacets s c seqs =
                 (\xsc ysc seq ->
                     S.svg
                         [ SA.viewBox 0 0 w h ]
-                        [ columnsInner h xsc ysc c seq ]
+                        [ columnsInner h xsc ysc c mbrush seq ]
                 )
                 xscs
                 yscs
                 seqs_
 
 
-columns : Config msg -> Series -> Svg msg
-columns c data =
+columns : Config msg -> Maybe (Brush OneDimensional) -> Series -> Svg msg
+columns c mbrush data =
     let
+        b =
+            cssBlock c
+
         tint =
             timeInterval c
 
@@ -1660,24 +1709,31 @@ columns c data =
             Facet.linearScale Tuple.second yr data_
 
         inner =
-            columnsInner h xsc ysc c data_
+            columnsInner h xsc ysc c mbrush data_
+
+        brush =
+            viewBrush b (onBrush c) mbrush
     in
     S.svg
         [ SA.viewBox 0 0 w h ]
-        [ inner ]
+        (inner :: brush)
 
 
-columnsInner : Float -> BandScale Time.Posix -> ContinuousScale Float -> Config msg -> Series -> Svg msg
-columnsInner h xsc ysc (Config c) data =
+columnsInner :
+    Float
+    -> BandScale Time.Posix
+    -> ContinuousScale Float
+    -> Config msg
+    -> Maybe (Brush OneDimensional)
+    -> Series
+    -> Svg msg
+columnsInner h xsc ysc c mbrush data =
     let
         pad =
-            c.padding
-
-        css =
-            c.css
+            padding c
 
         b =
-            Bem.init css.block
+            cssBlock c
 
         e =
             b.element "columns"
@@ -1686,23 +1742,48 @@ columnsInner h xsc ysc (Config c) data =
             b.element "column"
 
         cbar =
-            c.appearance.color
+            color c
 
         chigh =
-            c.appearance.highlightColor
+            highlightColor c
+
+        wcol =
+            observationWidth c
+
+        bw =
+            Scale.bandwidth xsc
 
         highlights =
-            data |> selectHighlights c.highlight
+            data |> selectHighlights (highlight c)
+
+        brushoverlay =
+            mbrush
+                |> Maybe.andThen
+                    (\brush -> columnsBrushOverlay b c xsc ysc brush highlights data)
+
+        circles =
+            highlightCircles
+                b
+                chigh
+                (wcol * 2)
+                ( bw / 2, 0.0 )
+                (ColumnsScale xsc)
+                ysc
+                highlights
     in
     S.g
-        [ SA.transform [ Translate pad pad ], e |> element ]
-    <|
-        List.map (columnInner ec cbar chigh h pad xsc ysc highlights) data
+        [ SA.transform [ ST.Translate pad pad ]
+        ]
+        (S.g
+            [ e |> element ]
+            (data |> List.map (columnInner ec cbar h pad xsc ysc highlights))
+            :: (brushoverlay |> Maybe.withDefault (text ""))
+            :: circles
+        )
 
 
 columnInner :
     Bem.Element
-    -> Paint
     -> Paint
     -> Float
     -> Float
@@ -1711,26 +1792,108 @@ columnInner :
     -> Series
     -> Observation
     -> Svg msg
-columnInner e cbar chigh h pad xsc ysc highlights ( x, y ) =
+columnInner e cbar h pad xsc ysc hs ( x, y ) =
     let
         ishigh =
-            highlights
+            hs
                 |> List.any
-                    (\( xh, _ ) -> Time.posixToMillis xh == Time.posixToMillis x)
+                    (\( x_, _ ) -> Time.posixToMillis x_ == Time.posixToMillis x)
+    in
+    S.rect
+        [ e |> elementIf "highlight" ishigh
+        , SA.x <| Px <| Scale.convert xsc x
+        , SA.y <| Px <| Scale.convert ysc y
+        , SA.width <| Px <| Scale.bandwidth xsc
+        , SA.height <| Px <| (h - Scale.convert ysc y) - (2 * pad)
+        , SA.fill cbar
+        , SA.stroke cbar
+        , SA.strokeWidth <| Px <| 0.25
+        ]
+        []
+
+
+columnsBrushOverlay :
+    Bem.Block
+    -> Config msg
+    -> BandScale Time.Posix
+    -> ContinuousScale Float
+    -> Brush OneDimensional
+    -> Series
+    -> Series
+    -> Maybe (Svg msg)
+columnsBrushOverlay b c xsc ysc brush hdata data =
+    case brushing c of
+        NoBrush ->
+            Nothing
+
+        BrushNoLabels { appearance } ->
+            Just <|
+                columnsBrushOverlayHelp appearance ( Nothing, Nothing ) b c xsc ysc brush hdata data
+
+        BrushLabels { appearance, labels } ->
+            Just <|
+                columnsBrushOverlayHelp appearance ( Just labels, Just labels ) b c xsc ysc brush hdata data
+
+        BrushLabelsX { appearance, labels } ->
+            Just <|
+                columnsBrushOverlayHelp appearance ( Just labels, Nothing ) b c xsc ysc brush hdata data
+
+        BrushLabelsY { appearance, labels } ->
+            Just <|
+                columnsBrushOverlayHelp appearance ( Nothing, Just labels ) b c xsc ysc brush hdata data
+
+
+columnsBrushOverlayHelp :
+    BrushingAppearanceConfig
+    -> ( Maybe BrushingLabelsConfig, Maybe BrushingLabelsConfig )
+    -> Bem.Block
+    -> Config msg
+    -> BandScale Time.Posix
+    -> ContinuousScale Float
+    -> Brush OneDimensional
+    -> Series
+    -> Series
+    -> Svg msg
+columnsBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
+    let
+        e =
+            b.element "brush-overlay"
+
+        ec =
+            b.element "brush-overlay-column"
+
+        tint =
+            timeInterval c
+
+        tz =
+            timeZone c
+
+        h =
+            height c
+
+        pad =
+            padding c
+
+        selected =
+            selectedBrushedColumns brush xsc data
+                |> Maybe.withDefault []
+
+        {-
+           brushlabels =
+               lineBrushOverlayBoundsAndLabels
+                   bapp
+                   ( mxlabels, mylabels )
+                   b
+                   tint
+                   tz
+                   c
+                   xsc
+                   ysc
+                   hlower
+                   hupper
+                   selected
+        -}
     in
     S.g
-        [ e |> elementList [ ( "highlighted", ishigh ) ] ]
-        [ S.rect
-            [ SA.x <| Px <| Scale.convert xsc x
-            , SA.y <| Px <| Scale.convert ysc y
-            , SA.width <| Px <| Scale.bandwidth xsc
-            , SA.height <| Px <| (h - Scale.convert ysc y) - (2 * pad)
-            , SA.fill <|
-                if ishigh then
-                    chigh
-
-                else
-                    cbar
-            ]
-            []
-        ]
+        [ e |> element ]
+        (selected |> List.map (columnInner ec bapp.area h pad xsc ysc hdata))

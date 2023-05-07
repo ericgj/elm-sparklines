@@ -41,6 +41,7 @@ type alias ModelData =
     , simpleColumns : Switch ()
     , brushLine : Switch Example.Brush.Model
     , brushLineFacetsFreeY : Switch Example.Brush.Model
+    , brushColumns : Switch Example.Brush.Model
     }
 
 
@@ -70,6 +71,7 @@ init _ =
         , simpleColumns = switchOff ()
         , brushLine = switchOff <| Example.Brush.init frame
         , brushLineFacetsFreeY = switchOff <| Example.Brush.init frame
+        , brushColumns = switchOff <| Example.Brush.init frame
         }
     , loadData
     )
@@ -87,8 +89,10 @@ type Msg
     | ToggleSimpleColumns
     | ToggleBrushLine
     | ToggleBrushLineFacetsFreeY
+    | ToggleBrushColumns
     | UpdateBrushLine Example.Brush.Msg
     | UpdateBrushLineFacetsFreeY Example.Brush.Msg
+    | UpdateBrushColumns Example.Brush.Msg
     | NoOp
 
 
@@ -133,6 +137,12 @@ updateNoCmd msg model =
                     | brushLineFacetsFreeY = switchMap (Example.Brush.update submsg) m.brushLineFacetsFreeY
                 }
 
+        ( ToggleBrushColumns, Model s m ) ->
+            Model s { m | brushColumns = toggle m.brushColumns }
+
+        ( UpdateBrushColumns submsg, Model s m ) ->
+            Model s { m | brushColumns = switchMap (Example.Brush.update submsg) m.brushColumns }
+
         ( NoOp, _ ) ->
             model
 
@@ -146,6 +156,7 @@ subscriptions : Model -> Sub Msg
 subscriptions (Model _ m) =
     [ Example.Brush.subscriptions (switchGet m.brushLine) |> Sub.map UpdateBrushLine
     , Example.Brush.subscriptions (switchGet m.brushLineFacetsFreeY) |> Sub.map UpdateBrushLineFacetsFreeY
+    , Example.Brush.subscriptions (switchGet m.brushColumns) |> Sub.map UpdateBrushColumns
     ]
         |> Sub.batch
 
@@ -215,21 +226,6 @@ view (Model st m) =
                 )
                 ToggleSimpleLineFacetsFreeY
                 (\_ -> NoOp)
-        , m.simpleColumns
-            |> viewSwitch
-                b
-                "Simple columns"
-                (\_ ->
-                    let
-                        series =
-                            totalSeries m.timeZone m.data
-                    in
-                    div []
-                        [ Example.Simple.columns Time.Year m.timeZone series
-                        ]
-                )
-                ToggleSimpleColumns
-                (\_ -> NoOp)
         , m.brushLine
             |> viewSwitch
                 b
@@ -256,6 +252,32 @@ view (Model st m) =
                 )
                 ToggleBrushLineFacetsFreeY
                 UpdateBrushLineFacetsFreeY
+        , m.simpleColumns
+            |> viewSwitch
+                b
+                "Simple columns"
+                (\_ ->
+                    let
+                        series =
+                            totalSeries m.timeZone m.data
+                    in
+                    div []
+                        [ Example.Simple.columns Time.Year m.timeZone series
+                        ]
+                )
+                ToggleSimpleColumns
+                (\_ -> NoOp)
+        , m.brushColumns
+            |> viewSwitch
+                b
+                "Columns with brushing"
+                (Example.Brush.columns
+                    Time.Year
+                    m.timeZone
+                    (totalSeries m.timeZone m.data)
+                )
+                ToggleBrushColumns
+                UpdateBrushColumns
         ]
 
 

@@ -1,4 +1,14 @@
-module Example.Brush exposing (Frame, Model, Msg, init, line, lineFacetsFreeY, subscriptions, update)
+module Example.Brush exposing
+    ( Frame
+    , Model
+    , Msg
+    , columns
+    , init
+    , line
+    , lineFacetsFreeY
+    , subscriptions
+    , update
+    )
 
 import Brush exposing (Brush, OnBrush, OneDimensional)
 import Facet exposing (Scaling(..))
@@ -103,6 +113,34 @@ lineFacetsFreeY tint tz data { frame, brush } =
                 (Just brush)
                 data
             )
+        ]
+
+
+columns : Time.Interval -> Time.Zone -> Series -> Model -> Html Msg
+columns tint tz data { frame, brush } =
+    let
+        c =
+            View.Simple.columnsConfig List.sum tint tz frame.width frame.height
+                |> View.Simple.withPadding 5.0
+                |> View.Simple.withHighlight HighlightMinMax
+                |> View.Simple.withBrushLabels
+                    UpdateBrush
+                    View.Simple.defaultBrushingAppearance
+                    View.Simple.defaultBrushingLabels
+                |> View.Simple.withBandConfig
+                    { paddingInner = 0.3
+                    , paddingOuter = 0.0
+                    , align = 0.5
+                    }
+
+        wstr =
+            frame.width |> round |> String.fromInt
+    in
+    div
+        []
+        [ div [ style "width" <| wstr ++ "px" ]
+            [ View.Simple.columns c (Just brush) data
+            ]
         ]
 
 

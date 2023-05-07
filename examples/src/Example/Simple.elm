@@ -66,5 +66,5 @@ columns tint tz data =
                     }
     in
     div [ style "width" "200px" ]
-        [ View.Simple.columns c data
+        [ View.Simple.columns c Nothing data
         ]
