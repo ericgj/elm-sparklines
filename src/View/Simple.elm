@@ -33,13 +33,15 @@ import Scale.Band.Extra
 import Scale.Color
 import Shape
 import Statistics
-import Svg.Bem as Bem exposing (element, elementIf, elementOf, elementOfList)
+import Svg.Bem as Bem exposing (element, elementIf, elementName, elementOf, elementOfList)
 import Time
 import Time.Extra as Time
 import Timeseries exposing (Observation, Series)
 import TypedSvg as S
 import TypedSvg.Attributes as SA
-import TypedSvg.Core exposing (Attribute, Svg, text)
+import TypedSvg.Core exposing (Attribute, Svg, attribute, text)
+import TypedSvg.Filters as SF
+import TypedSvg.Filters.Attributes as SFA
 import TypedSvg.Types as ST
     exposing
         ( AlignmentBaseline(..)
@@ -305,7 +307,7 @@ defaultCssConfig =
 defaultBrushingAppearance : BrushingAppearanceConfig
 defaultBrushingAppearance =
     { area = Paint <| Color.rgb 1 1 0
-    , bounds = Paint <| Color.rgba 0 0 0 0.5
+    , bounds = Paint <| Color.rgba 0 0 0 0.6
     , boundsDashed = False
     , highlight = Paint <| Color.rgb 1 0 0
     }
@@ -313,8 +315,8 @@ defaultBrushingAppearance =
 
 defaultBrushingLabels : BrushingLabelsConfig
 defaultBrushingLabels =
-    { color = Paint <| Color.rgb 0 0 0
-    , size = Rem 0.7
+    { color = Paint <| Color.rgb 1 1 1
+    , size = Rem 0.8
     , toString = round >> String.fromInt
     }
 
@@ -542,7 +544,7 @@ isHighlightedTimeInterval fn tint tz x =
 -- SCALING
 -- -----------------------------------------------------------------------------
 {- Note: certain functions are used by both line and columns charts,
-   this type allows polymorphism. scaledPoints is polymorphic, used by both line and columns charts.
+   this type allows polymorphism.
 -}
 
 
@@ -780,6 +782,763 @@ viewBrush b mmsg mbrush =
     Maybe.map2 inner mmsg mbrush
         |> Maybe.map List.singleton
         |> Maybe.withDefault []
+
+
+
+-- -----------------------------------------------------------------------------
+-- BRUSH OVERLAY
+-- -----------------------------------------------------------------------------
+
+
+lineBrushOverlay :
+    Bem.Block
+    -> Config msg
+    -> ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Brush OneDimensional
+    -> Series
+    -> Series
+    -> Maybe (Svg msg)
+lineBrushOverlay b c xsc ysc brush hdata data =
+    case brushing c of
+        NoBrush ->
+            Nothing
+
+        BrushNoLabels { appearance } ->
+            Just <|
+                lineBrushOverlayHelp appearance ( Nothing, Nothing ) b c xsc ysc brush hdata data
+
+        BrushLabels { appearance, labels } ->
+            Just <|
+                lineBrushOverlayHelp appearance ( Just labels, Just labels ) b c xsc ysc brush hdata data
+
+        BrushLabelsX { appearance, labels } ->
+            Just <|
+                lineBrushOverlayHelp appearance ( Just labels, Nothing ) b c xsc ysc brush hdata data
+
+        BrushLabelsY { appearance, labels } ->
+            Just <|
+                lineBrushOverlayHelp appearance ( Nothing, Just labels ) b c xsc ysc brush hdata data
+
+
+lineBrushOverlayHelp :
+    BrushingAppearanceConfig
+    -> ( Maybe BrushingLabelsConfig, Maybe BrushingLabelsConfig )
+    -> Bem.Block
+    -> Config msg
+    -> ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Brush OneDimensional
+    -> Series
+    -> Series
+    -> Svg msg
+lineBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
+    let
+        e =
+            b.element "brush-overlay"
+
+        ea =
+            b.element "brush-overlay-area"
+
+        tint =
+            timeInterval c
+
+        tz =
+            timeZone c
+
+        mselectext =
+            extentBrushed brush xsc
+
+        ( hlower, hupper ) =
+            mselectext
+                |> Maybe.map
+                    (Tuple.mapBoth
+                        (\x -> isHighlightedTimeInterval Time.ceiling tint tz x hdata)
+                        (\x -> isHighlightedTimeInterval Time.floor tint tz x hdata)
+                    )
+                |> Maybe.withDefault ( False, False )
+
+        selected =
+            mselectext
+                |> Maybe.map (\ext -> selectInTimeExtent ext data)
+                |> Maybe.withDefault []
+
+        brusharea =
+            selected
+                |> scaledAreaBounds -1 xsc ysc
+                |> Shape.area Shape.linearCurve
+
+        brushlabels =
+            brushOverlayBoundsAndLabels
+                bapp
+                ( mxlabels, mylabels )
+                b
+                tint
+                tz
+                c
+                (LineScale xsc)
+                ysc
+                hlower
+                hupper
+                selected
+    in
+    S.g
+        [ e |> element ]
+        [ Path.element brusharea
+            [ ea |> element
+            , SA.fill bapp.area
+            ]
+        , brushlabels |> Maybe.withDefault (text "")
+        ]
+
+
+columnsBrushOverlay :
+    Bem.Block
+    -> Config msg
+    -> BandScale Time.Posix
+    -> ContinuousScale Float
+    -> Brush OneDimensional
+    -> Series
+    -> Series
+    -> Maybe (Svg msg)
+columnsBrushOverlay b c xsc ysc brush hdata data =
+    case brushing c of
+        NoBrush ->
+            Nothing
+
+        BrushNoLabels { appearance } ->
+            Just <|
+                columnsBrushOverlayHelp appearance ( Nothing, Nothing ) b c xsc ysc brush hdata data
+
+        BrushLabels { appearance, labels } ->
+            Just <|
+                columnsBrushOverlayHelp appearance ( Just labels, Just labels ) b c xsc ysc brush hdata data
+
+        BrushLabelsX { appearance, labels } ->
+            Just <|
+                columnsBrushOverlayHelp appearance ( Just labels, Nothing ) b c xsc ysc brush hdata data
+
+        BrushLabelsY { appearance, labels } ->
+            Just <|
+                columnsBrushOverlayHelp appearance ( Nothing, Just labels ) b c xsc ysc brush hdata data
+
+
+columnsBrushOverlayHelp :
+    BrushingAppearanceConfig
+    -> ( Maybe BrushingLabelsConfig, Maybe BrushingLabelsConfig )
+    -> Bem.Block
+    -> Config msg
+    -> BandScale Time.Posix
+    -> ContinuousScale Float
+    -> Brush OneDimensional
+    -> Series
+    -> Series
+    -> Svg msg
+columnsBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
+    let
+        e =
+            b.element "brush-overlay"
+
+        ec =
+            b.element "brush-overlay-column"
+
+        tint =
+            timeInterval c
+
+        tz =
+            timeZone c
+
+        h =
+            height c
+
+        pad =
+            padding c
+
+        selected =
+            selectedBrushedColumns brush xsc data
+                |> Maybe.withDefault []
+
+        ( hlower, hupper ) =
+            ( List.head selected, List.last selected )
+                |> Tuple.mapBoth
+                    (Maybe.map
+                        (\( x, _ ) -> isHighlightedTimeInterval Time.ceiling tint tz x hdata)
+                        >> Maybe.withDefault False
+                    )
+                    (Maybe.map
+                        (\( x, _ ) -> isHighlightedTimeInterval Time.floor tint tz x hdata)
+                        >> Maybe.withDefault False
+                    )
+
+        brushlabels =
+            brushOverlayBoundsAndLabels
+                bapp
+                ( mxlabels, mylabels )
+                b
+                tint
+                tz
+                c
+                (ColumnsScale xsc)
+                ysc
+                hlower
+                hupper
+                selected
+    in
+    S.g
+        [ e |> element ]
+        (List.map (columnInner ec bapp.area h pad xsc ysc hdata) selected
+            ++ (brushlabels |> Maybe.map List.singleton |> Maybe.withDefault [])
+        )
+
+
+brushOverlayBoundsAndLabels :
+    BrushingAppearanceConfig
+    -> ( Maybe BrushingLabelsConfig, Maybe BrushingLabelsConfig )
+    -> Bem.Block
+    -> Time.Interval
+    -> Time.Zone
+    -> Config msg
+    -> ChartScaleX
+    -> ContinuousScale Float
+    -> Bool
+    -> Bool
+    -> Series
+    -> Maybe (Svg msg)
+brushOverlayBoundsAndLabels bapp ( mxlabels, mylabels ) b tint tz c xsc ysc hlower hupper selected =
+    let
+        e =
+            b.element "brush-label-filter"
+
+        filt =
+            ST.Filter <| "url(#" ++ elementName e ++ ")"
+
+        inner ( ( ( vmin, vminl ), ( hmin, hminl ) ), ( ( vmax, vmaxl ), ( hmax, hmaxl ) ) ) =
+            case ( mxlabels, mylabels ) of
+                ( Nothing, Nothing ) ->
+                    S.g
+                        []
+                        [ brushBoundsLines bapp b "x" hlower hupper ( vmin, vmax )
+                        ]
+
+                ( Just xlabels, Nothing ) ->
+                    S.g
+                        []
+                        [ brushLabelFilter (elementName e) bapp.bounds
+                        , brushBoundsXLinesAndLabels
+                            bapp
+                            xlabels
+                            filt
+                            b
+                            c
+                            hlower
+                            hupper
+                            ( ( vmin, vminl ), ( vmax, vmaxl ) )
+                        ]
+
+                ( Nothing, Just ylabels ) ->
+                    S.g
+                        []
+                        [ brushLabelFilter (elementName e) bapp.bounds
+                        , brushBoundsYLinesAndLabels
+                            bapp
+                            ylabels
+                            filt
+                            b
+                            c
+                            hlower
+                            hupper
+                            ( ( hmin, hminl ), ( hmax, hmaxl ) )
+                        ]
+
+                ( Just xlabels, Just ylabels ) ->
+                    S.g
+                        []
+                        [ brushLabelFilter (elementName e) bapp.bounds
+                        , brushBoundsXLinesAndLabels
+                            bapp
+                            xlabels
+                            filt
+                            b
+                            c
+                            hlower
+                            hupper
+                            ( ( vmin, vminl ), ( vmax, vmaxl ) )
+                        , brushBoundsYLinesAndLabels
+                            bapp
+                            ylabels
+                            filt
+                            b
+                            c
+                            hlower
+                            hupper
+                            ( ( hmin, hminl ), ( hmax, hmaxl ) )
+                        ]
+    in
+    selectedBoundsAndLabels tint tz xsc ysc selected
+        |> Maybe.map inner
+
+
+selectedBoundsAndLabels :
+    Time.Interval
+    -> Time.Zone
+    -> ChartScaleX
+    -> ContinuousScale Float
+    -> Series
+    ->
+        Maybe
+            ( ( ( Path, ( String, Float ) ), ( Path, ( Float, Float ) ) )
+            , ( ( Path, ( String, Float ) ), ( Path, ( Float, Float ) ) )
+            )
+selectedBoundsAndLabels tint tz xsc ysc data =
+    let
+        mext =
+            data |> Statistics.extentBy (Tuple.first >> Time.posixToMillis)
+
+        convert =
+            case xsc of
+                LineScale xsc_ ->
+                    Scale.convert xsc_
+
+                ColumnsScale xsc_ ->
+                    Scale.convert xsc_
+
+        inner ( x, y ) =
+            ( ( scaledVerticalLinePoints xsc ysc ( x, y ) |> Shape.line Shape.linearCurve
+              , ( timeIntervalString tint tz x
+                , convert x
+                )
+              )
+            , ( scaledHorizontalLinePoints xsc ysc ( x, y ) |> Shape.line Shape.linearCurve
+              , ( y
+                , Scale.convert ysc y
+                )
+              )
+            )
+    in
+    mext |> Maybe.map (Tuple.mapBoth inner inner)
+
+
+brushBoundsLines :
+    BrushingAppearanceConfig
+    -> Bem.Block
+    -> String
+    -> Bool
+    -> Bool
+    -> ( Path, Path )
+    -> Svg msg
+brushBoundsLines bapp b dim hlower hupper ( p0, p1 ) =
+    let
+        e =
+            b.element "selected-bounds"
+    in
+    S.g
+        [ e |> elementOf "dim" dim ]
+        (brushBoundsLinesInner bapp b dim hlower hupper ( p0, p1 ))
+
+
+brushBoundsLinesInner :
+    BrushingAppearanceConfig
+    -> Bem.Block
+    -> String
+    -> Bool
+    -> Bool
+    -> ( Path, Path )
+    -> List (Svg msg)
+brushBoundsLinesInner bapp b dim hlower hupper ( p0, p1 ) =
+    let
+        ep =
+            b.element "selected-bound"
+
+        str =
+            bapp.bounds
+
+        hstr =
+            bapp.highlight
+
+        strdash =
+            if bapp.boundsDashed then
+                "4 2"
+
+            else
+                ""
+    in
+    [ Path.element p0
+        [ ep |> elementOfList [ ( "dim", dim ), ( "type", "lower" ) ]
+        , ep |> elementIf "highlight" hlower
+        , SA.stroke <|
+            if hlower then
+                hstr
+
+            else
+                str
+        , SA.strokeDasharray strdash
+        , SA.fill PaintNone
+        ]
+    , Path.element p1
+        [ ep |> elementOfList [ ( "dim", dim ), ( "type", "upper" ) ]
+        , ep |> elementIf "highlight" hupper
+        , SA.stroke <|
+            if hupper then
+                hstr
+
+            else
+                str
+        , SA.strokeDasharray strdash
+        , SA.fill PaintNone
+        ]
+    ]
+
+
+brushBoundsXLinesAndLabels :
+    BrushingAppearanceConfig
+    -> BrushingLabelsConfig
+    -> ST.Filter
+    -> Bem.Block
+    -> Config msg
+    -> Bool
+    -> Bool
+    -> ( ( Path, ( String, Float ) ), ( Path, ( String, Float ) ) )
+    -> Svg msg
+brushBoundsXLinesAndLabels bapp bl filt b c hlower hupper ( ( p0, ( l0, x0 ) ), ( p1, ( l1, x1 ) ) ) =
+    let
+        e =
+            b.element "selected-bounds"
+
+        el =
+            b.element "selected-bound-label"
+
+        pad =
+            padding c
+
+        h =
+            height c
+
+        w =
+            width c
+
+        ybaseline =
+            h - (pad * 2)
+
+        xmid =
+            (w - pad * 2) / 2.0
+
+        x0adj =
+            if x0 <= xmid then
+                1
+
+            else
+                -1
+
+        x1adj =
+            if x1 <= xmid then
+                1
+
+            else
+                -1
+
+        regcolor =
+            bl.color
+
+        hcolor =
+            bapp.highlight
+
+        fsize =
+            bl.size
+    in
+    S.g
+        [ e |> elementOf "dim" "x" ]
+        (brushBoundsLinesInner bapp b "x" hlower hupper ( p0, p1 )
+            ++ [ S.text_
+                    [ el |> elementOfList [ ( "dim", "x" ), ( "type", "lower" ) ]
+                    , el |> elementIf "highlight" hlower
+                    , SA.filter filt
+                    , SA.transform [ ST.Translate (x0 + x0adj) ybaseline ]
+                    , SA.textAnchor <|
+                        if x0 <= xmid then
+                            AnchorStart
+
+                        else
+                            AnchorEnd
+                    , SA.fontSize fsize
+                    , SA.fill <|
+                        if hlower then
+                            hcolor
+
+                        else
+                            regcolor
+                    , SA.style "pointer-events: none; user-select: none"
+                    ]
+                    [ text l0 ]
+               , S.text_
+                    [ el |> elementOfList [ ( "dim", "x" ), ( "type", "upper" ) ]
+                    , el |> elementIf "highlight" hupper
+                    , SA.filter filt
+                    , SA.transform [ ST.Translate (x1 + x1adj) ybaseline ]
+                    , SA.textAnchor <|
+                        if x1 <= xmid then
+                            AnchorStart
+
+                        else
+                            AnchorEnd
+                    , SA.fontSize fsize
+                    , SA.fill <|
+                        if hupper then
+                            hcolor
+
+                        else
+                            regcolor
+                    , SA.style "pointer-events: none; user-select: none"
+                    ]
+                    [ text l1 ]
+               ]
+        )
+
+
+brushBoundsYLinesAndLabels :
+    BrushingAppearanceConfig
+    -> BrushingLabelsConfig
+    -> ST.Filter
+    -> Bem.Block
+    -> Config msg
+    -> Bool
+    -> Bool
+    -> ( ( Path, ( Float, Float ) ), ( Path, ( Float, Float ) ) )
+    -> Svg msg
+brushBoundsYLinesAndLabels bapp bl filt b c hlower hupper ( ( p0, ( v0, y0 ) ), ( p1, ( v1, y1 ) ) ) =
+    let
+        e =
+            b.element "selected-bounds"
+
+        el =
+            b.element "selected-bound-label"
+
+        pad =
+            padding c
+
+        h =
+            height c
+
+        xbaseline =
+            0.0
+
+        l0 =
+            v0 |> bl.toString
+
+        l1 =
+            v1 |> bl.toString
+
+        ymid =
+            (h - pad * 2) / 2.0
+
+        y0adj =
+            if y0 <= ymid then
+                1
+
+            else
+                -1
+
+        y1adj =
+            if y1 <= ymid then
+                1
+
+            else
+                -1
+
+        y0align =
+            if y0 <= ymid then
+                AlignmentHanging
+
+            else
+                AlignmentBaseline
+
+        y1align =
+            if y1 <= ymid then
+                AlignmentHanging
+
+            else
+                AlignmentBaseline
+
+        regcolor =
+            bl.color
+
+        hcolor =
+            bapp.highlight
+
+        fsize =
+            bl.size
+    in
+    S.g
+        [ e |> elementOf "dim" "y" ]
+        (brushBoundsLinesInner bapp b "y" hlower hupper ( p0, p1 )
+            ++ [ S.text_
+                    [ el |> elementOfList [ ( "dim", "y" ), ( "type", "lower" ) ]
+                    , el |> elementIf "highlight" hlower
+                    , SA.filter filt
+                    , SA.transform [ ST.Translate xbaseline (y0 + y0adj) ]
+                    , SA.textAnchor AnchorStart
+                    , SA.alignmentBaseline y0align
+                    , SA.fill <|
+                        if hlower then
+                            hcolor
+
+                        else
+                            regcolor
+                    , SA.fontSize fsize
+                    , SA.style "pointer-events: none; user-select: none"
+                    ]
+                    [ text l0 ]
+               , S.text_
+                    [ el |> elementOfList [ ( "dim", "y" ), ( "type", "upper" ) ]
+                    , el |> elementIf "highlight" hupper
+                    , SA.filter filt
+                    , SA.transform [ ST.Translate xbaseline (y1 + y1adj) ]
+                    , SA.textAnchor AnchorStart
+                    , SA.alignmentBaseline y1align
+                    , SA.fill <|
+                        if hupper then
+                            hcolor
+
+                        else
+                            regcolor
+                    , SA.fontSize fsize
+                    , SA.style "pointer-events: none; user-select: none"
+                    ]
+                    (text l1
+                        :: percentDiffLabel
+                            [ SA.alignmentBaseline y1align
+                            , SA.fontSize fsize
+                            ]
+                            b
+                            v0
+                            v1
+                    )
+               ]
+        )
+
+
+brushLabelFilter : String -> Paint -> Svg msg
+brushLabelFilter idname p =
+    let
+        fc =
+            floodColorFromPaint p
+    in
+    S.filter
+        [ SA.id idname
+        , SA.x <| Px -0.05
+        , SA.y <| Px -0.05
+        , SA.width <| Num 1.1
+        , SA.height <| Num 1.1
+        ]
+        [ SF.flood
+            [ floodColor fc
+            ]
+            []
+        , SF.composite
+            [ SFA.in_ ST.InSourceGraphic
+            , SFA.compositeOperator ST.CompositeOperatorOver
+            ]
+            []
+        ]
+
+
+floodColorFromPaint : ST.Paint -> ST.FloodColor
+floodColorFromPaint p =
+    case p of
+        Paint c ->
+            ST.Flood c
+
+        CSSVariable s ->
+            ST.FloodICC s
+
+        Reference s ->
+            ST.FloodICC s
+
+        ContextFill ->
+            ST.FloodCurrentColor
+
+        ContextStroke ->
+            ST.FloodCurrentColor
+
+        PaintNone ->
+            ST.FloodICC "none"
+
+
+
+{- Note: hack around TypedSvg bug -}
+
+
+floodColor : ST.FloodColor -> Attribute x
+floodColor fc =
+    case fc of
+        ST.FloodInherit ->
+            attribute "flood-color" "inherit"
+
+        ST.FloodCurrentColor ->
+            attribute "flood-color" "currentColor"
+
+        ST.Flood c ->
+            attribute "flood-color" <| Color.toCssString c
+
+        ST.FloodICC icc ->
+            attribute "flood-color" icc
+
+
+percentDiffLabel :
+    List (Attribute msg)
+    -> Bem.Block
+    -> Float
+    -> Float
+    -> List (Svg msg)
+percentDiffLabel attrs b y0 y1 =
+    let
+        es =
+            b.element "percent-label-symbol"
+
+        ev =
+            b.element "percent-label-value"
+
+        pct =
+            (y1 - y0) / y0
+
+        ( tag, sym ) =
+            case compare pct 0.0 of
+                EQ ->
+                    ( "eq", " " )
+
+                GT ->
+                    ( "gt", "⯅" )
+
+                LT ->
+                    ( "lt", "⯆" )
+
+        disp =
+            (pct * 100 |> round |> abs |> String.fromInt) ++ "%"
+    in
+    [ S.tspan
+        ((es |> elementOf "diff" tag) :: attrs)
+        [ text sym ]
+    , S.tspan
+        ((ev |> elementOf "diff" tag) :: attrs)
+        [ text disp ]
+    ]
+
+
+
+-- TODO: Finish implementing and move somewhere generic
+
+
+timeIntervalString : Time.Interval -> Time.Zone -> Time.Posix -> String
+timeIntervalString tint tz t =
+    case tint of
+        Time.Year ->
+            let
+                tparts =
+                    Time.posixToParts tz t
+            in
+            tparts.year |> String.fromInt
+
+        _ ->
+            "TODO"
 
 
 
@@ -1054,677 +1813,6 @@ pointToCircle e fillcolor radius ( x, y ) =
             ]
             []
         ]
-
-
-
--- -----------------------------------------------------------------------------
--- BRUSH OVERLAY
--- -----------------------------------------------------------------------------
-
-
-lineBrushOverlay :
-    Bem.Block
-    -> Config msg
-    -> ContinuousScale Time.Posix
-    -> ContinuousScale Float
-    -> Brush OneDimensional
-    -> Series
-    -> Series
-    -> Maybe (Svg msg)
-lineBrushOverlay b c xsc ysc brush hdata data =
-    case brushing c of
-        NoBrush ->
-            Nothing
-
-        BrushNoLabels { appearance } ->
-            Just <|
-                lineBrushOverlayHelp appearance ( Nothing, Nothing ) b c xsc ysc brush hdata data
-
-        BrushLabels { appearance, labels } ->
-            Just <|
-                lineBrushOverlayHelp appearance ( Just labels, Just labels ) b c xsc ysc brush hdata data
-
-        BrushLabelsX { appearance, labels } ->
-            Just <|
-                lineBrushOverlayHelp appearance ( Just labels, Nothing ) b c xsc ysc brush hdata data
-
-        BrushLabelsY { appearance, labels } ->
-            Just <|
-                lineBrushOverlayHelp appearance ( Nothing, Just labels ) b c xsc ysc brush hdata data
-
-
-lineBrushOverlayHelp :
-    BrushingAppearanceConfig
-    -> ( Maybe BrushingLabelsConfig, Maybe BrushingLabelsConfig )
-    -> Bem.Block
-    -> Config msg
-    -> ContinuousScale Time.Posix
-    -> ContinuousScale Float
-    -> Brush OneDimensional
-    -> Series
-    -> Series
-    -> Svg msg
-lineBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
-    let
-        e =
-            b.element "brush-overlay"
-
-        ea =
-            b.element "brush-overlay-area"
-
-        tint =
-            timeInterval c
-
-        tz =
-            timeZone c
-
-        mselectext =
-            extentBrushed brush xsc
-
-        ( hlower, hupper ) =
-            mselectext
-                |> Maybe.map
-                    (Tuple.mapBoth
-                        (\x -> isHighlightedTimeInterval Time.ceiling tint tz x hdata)
-                        (\x -> isHighlightedTimeInterval Time.floor tint tz x hdata)
-                    )
-                |> Maybe.withDefault ( False, False )
-
-        selected =
-            mselectext
-                |> Maybe.map (\ext -> selectInTimeExtent ext data)
-                |> Maybe.withDefault []
-
-        brusharea =
-            selected
-                |> scaledAreaBounds -1 xsc ysc
-                |> Shape.area Shape.linearCurve
-
-        brushlabels =
-            brushOverlayBoundsAndLabels
-                bapp
-                ( mxlabels, mylabels )
-                b
-                tint
-                tz
-                c
-                (LineScale xsc)
-                ysc
-                hlower
-                hupper
-                selected
-    in
-    S.g
-        [ e |> element ]
-        [ Path.element brusharea
-            [ ea |> element
-            , SA.fill bapp.area
-            ]
-        , brushlabels |> Maybe.withDefault (text "")
-        ]
-
-
-columnsBrushOverlay :
-    Bem.Block
-    -> Config msg
-    -> BandScale Time.Posix
-    -> ContinuousScale Float
-    -> Brush OneDimensional
-    -> Series
-    -> Series
-    -> Maybe (Svg msg)
-columnsBrushOverlay b c xsc ysc brush hdata data =
-    case brushing c of
-        NoBrush ->
-            Nothing
-
-        BrushNoLabels { appearance } ->
-            Just <|
-                columnsBrushOverlayHelp appearance ( Nothing, Nothing ) b c xsc ysc brush hdata data
-
-        BrushLabels { appearance, labels } ->
-            Just <|
-                columnsBrushOverlayHelp appearance ( Just labels, Just labels ) b c xsc ysc brush hdata data
-
-        BrushLabelsX { appearance, labels } ->
-            Just <|
-                columnsBrushOverlayHelp appearance ( Just labels, Nothing ) b c xsc ysc brush hdata data
-
-        BrushLabelsY { appearance, labels } ->
-            Just <|
-                columnsBrushOverlayHelp appearance ( Nothing, Just labels ) b c xsc ysc brush hdata data
-
-
-columnsBrushOverlayHelp :
-    BrushingAppearanceConfig
-    -> ( Maybe BrushingLabelsConfig, Maybe BrushingLabelsConfig )
-    -> Bem.Block
-    -> Config msg
-    -> BandScale Time.Posix
-    -> ContinuousScale Float
-    -> Brush OneDimensional
-    -> Series
-    -> Series
-    -> Svg msg
-columnsBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
-    let
-        e =
-            b.element "brush-overlay"
-
-        ec =
-            b.element "brush-overlay-column"
-
-        tint =
-            timeInterval c
-
-        tz =
-            timeZone c
-
-        h =
-            height c
-
-        pad =
-            padding c
-
-        selected =
-            selectedBrushedColumns brush xsc data
-                |> Maybe.withDefault []
-
-        ( hlower, hupper ) =
-            ( List.head selected, List.last selected )
-                |> Tuple.mapBoth
-                    (Maybe.map
-                        (\( x, _ ) -> isHighlightedTimeInterval Time.ceiling tint tz x hdata)
-                        >> Maybe.withDefault False
-                    )
-                    (Maybe.map
-                        (\( x, _ ) -> isHighlightedTimeInterval Time.floor tint tz x hdata)
-                        >> Maybe.withDefault False
-                    )
-
-        brushlabels =
-            brushOverlayBoundsAndLabels
-                bapp
-                ( mxlabels, mylabels )
-                b
-                tint
-                tz
-                c
-                (ColumnsScale xsc)
-                ysc
-                hlower
-                hupper
-                selected
-    in
-    S.g
-        [ e |> element ]
-        (List.map (columnInner ec bapp.area h pad xsc ysc hdata) selected
-            ++ (brushlabels |> Maybe.map List.singleton |> Maybe.withDefault [])
-        )
-
-
-brushOverlayBoundsAndLabels :
-    BrushingAppearanceConfig
-    -> ( Maybe BrushingLabelsConfig, Maybe BrushingLabelsConfig )
-    -> Bem.Block
-    -> Time.Interval
-    -> Time.Zone
-    -> Config msg
-    -> ChartScaleX
-    -> ContinuousScale Float
-    -> Bool
-    -> Bool
-    -> Series
-    -> Maybe (Svg msg)
-brushOverlayBoundsAndLabels app ( mxlabels, mylabels ) b tint tz c xsc ysc hlower hupper selected =
-    let
-        inner ( ( ( vmin, vminl ), ( hmin, hminl ) ), ( ( vmax, vmaxl ), ( hmax, hmaxl ) ) ) =
-            case ( mxlabels, mylabels ) of
-                ( Nothing, Nothing ) ->
-                    S.g
-                        []
-                        [ brushBoundsLines app b "x" hlower hupper ( vmin, vmax )
-                        ]
-
-                ( Just xlabels, Nothing ) ->
-                    S.g
-                        []
-                        [ brushBoundsXLinesAndLabels
-                            app
-                            xlabels
-                            b
-                            c
-                            hlower
-                            hupper
-                            ( ( vmin, vminl ), ( vmax, vmaxl ) )
-                        ]
-
-                ( Nothing, Just ylabels ) ->
-                    S.g
-                        []
-                        [ brushBoundsYLinesAndLabels
-                            app
-                            ylabels
-                            b
-                            c
-                            hlower
-                            hupper
-                            ( ( hmin, hminl ), ( hmax, hmaxl ) )
-                        ]
-
-                ( Just xlabels, Just ylabels ) ->
-                    S.g
-                        []
-                        [ brushBoundsXLinesAndLabels
-                            app
-                            xlabels
-                            b
-                            c
-                            hlower
-                            hupper
-                            ( ( vmin, vminl ), ( vmax, vmaxl ) )
-                        , brushBoundsYLinesAndLabels
-                            app
-                            ylabels
-                            b
-                            c
-                            hlower
-                            hupper
-                            ( ( hmin, hminl ), ( hmax, hmaxl ) )
-                        ]
-    in
-    selectedBoundsAndLabels tint tz xsc ysc selected
-        |> Maybe.map inner
-
-
-selectedBoundsAndLabels :
-    Time.Interval
-    -> Time.Zone
-    -> ChartScaleX
-    -> ContinuousScale Float
-    -> Series
-    ->
-        Maybe
-            ( ( ( Path, ( String, Float ) ), ( Path, ( Float, Float ) ) )
-            , ( ( Path, ( String, Float ) ), ( Path, ( Float, Float ) ) )
-            )
-selectedBoundsAndLabels tint tz xsc ysc data =
-    let
-        mext =
-            data |> Statistics.extentBy (Tuple.first >> Time.posixToMillis)
-
-        convert =
-            case xsc of
-                LineScale xsc_ ->
-                    Scale.convert xsc_
-
-                ColumnsScale xsc_ ->
-                    Scale.convert xsc_
-
-        inner ( x, y ) =
-            ( ( scaledVerticalLinePoints xsc ysc ( x, y ) |> Shape.line Shape.linearCurve
-              , ( timeIntervalString tint tz x
-                , convert x
-                )
-              )
-            , ( scaledHorizontalLinePoints xsc ysc ( x, y ) |> Shape.line Shape.linearCurve
-              , ( y
-                , Scale.convert ysc y
-                )
-              )
-            )
-    in
-    mext |> Maybe.map (Tuple.mapBoth inner inner)
-
-
-brushBoundsLines :
-    BrushingAppearanceConfig
-    -> Bem.Block
-    -> String
-    -> Bool
-    -> Bool
-    -> ( Path, Path )
-    -> Svg msg
-brushBoundsLines bapp b dim hlower hupper ( p0, p1 ) =
-    let
-        e =
-            b.element "selected-bounds"
-    in
-    S.g
-        [ e |> elementOf "dim" dim ]
-        (brushBoundsLinesInner bapp b dim hlower hupper ( p0, p1 ))
-
-
-brushBoundsLinesInner :
-    BrushingAppearanceConfig
-    -> Bem.Block
-    -> String
-    -> Bool
-    -> Bool
-    -> ( Path, Path )
-    -> List (Svg msg)
-brushBoundsLinesInner bapp b dim hlower hupper ( p0, p1 ) =
-    let
-        ep =
-            b.element "selected-bound"
-
-        str =
-            bapp.bounds
-
-        hstr =
-            bapp.highlight
-
-        strdash =
-            if bapp.boundsDashed then
-                "4 2"
-
-            else
-                ""
-    in
-    [ Path.element p0
-        [ ep |> elementOfList [ ( "dim", dim ), ( "type", "lower" ) ]
-        , ep |> elementIf "highlight" hlower
-        , SA.stroke <|
-            if hlower then
-                hstr
-
-            else
-                str
-        , SA.strokeDasharray strdash
-        , SA.fill PaintNone
-        ]
-    , Path.element p1
-        [ ep |> elementOfList [ ( "dim", dim ), ( "type", "upper" ) ]
-        , ep |> elementIf "highlight" hupper
-        , SA.stroke <|
-            if hupper then
-                hstr
-
-            else
-                str
-        , SA.strokeDasharray strdash
-        , SA.fill PaintNone
-        ]
-    ]
-
-
-brushBoundsXLinesAndLabels :
-    BrushingAppearanceConfig
-    -> BrushingLabelsConfig
-    -> Bem.Block
-    -> Config msg
-    -> Bool
-    -> Bool
-    -> ( ( Path, ( String, Float ) ), ( Path, ( String, Float ) ) )
-    -> Svg msg
-brushBoundsXLinesAndLabels bapp bl b c hlower hupper ( ( p0, ( l0, x0 ) ), ( p1, ( l1, x1 ) ) ) =
-    let
-        e =
-            b.element "selected-bounds"
-
-        el =
-            b.element "selected-bound-label"
-
-        pad =
-            padding c
-
-        h =
-            height c
-
-        w =
-            width c
-
-        ybaseline =
-            h - pad
-
-        xmid =
-            (w - pad * 2) / 2.0
-
-        x0adj =
-            if x0 <= xmid then
-                1
-
-            else
-                -1
-
-        x1adj =
-            if x1 <= xmid then
-                1
-
-            else
-                -1
-
-        regcolor =
-            bapp.bounds
-
-        hcolor =
-            bapp.highlight
-
-        fsize =
-            bl.size
-    in
-    S.g
-        [ e |> elementOf "dim" "x" ]
-        (brushBoundsLinesInner bapp b "x" hlower hupper ( p0, p1 )
-            ++ [ S.text_
-                    [ el |> elementOfList [ ( "dim", "x" ), ( "type", "lower" ) ]
-                    , el |> elementIf "highlight" hlower
-                    , SA.transform [ ST.Translate (x0 + x0adj) ybaseline ]
-                    , SA.textAnchor <|
-                        if x0 <= xmid then
-                            AnchorStart
-
-                        else
-                            AnchorEnd
-                    , SA.fontSize fsize
-                    , SA.fill <|
-                        if hlower then
-                            hcolor
-
-                        else
-                            regcolor
-                    , SA.style "pointer-events: none; user-select: none"
-                    ]
-                    [ text l0 ]
-               , S.text_
-                    [ el |> elementOfList [ ( "dim", "x" ), ( "type", "upper" ) ]
-                    , el |> elementIf "highlight" hupper
-                    , SA.transform [ ST.Translate (x1 + x1adj) ybaseline ]
-                    , SA.textAnchor <|
-                        if x1 <= xmid then
-                            AnchorStart
-
-                        else
-                            AnchorEnd
-                    , SA.fontSize fsize
-                    , SA.fill <|
-                        if hupper then
-                            hcolor
-
-                        else
-                            regcolor
-                    , SA.style "pointer-events: none; user-select: none"
-                    ]
-                    [ text l1 ]
-               ]
-        )
-
-
-brushBoundsYLinesAndLabels :
-    BrushingAppearanceConfig
-    -> BrushingLabelsConfig
-    -> Bem.Block
-    -> Config msg
-    -> Bool
-    -> Bool
-    -> ( ( Path, ( Float, Float ) ), ( Path, ( Float, Float ) ) )
-    -> Svg msg
-brushBoundsYLinesAndLabels bapp bl b c hlower hupper ( ( p0, ( v0, y0 ) ), ( p1, ( v1, y1 ) ) ) =
-    let
-        e =
-            b.element "selected-bounds"
-
-        el =
-            b.element "selected-bound-label"
-
-        pad =
-            padding c
-
-        h =
-            height c
-
-        xbaseline =
-            0.0
-
-        l0 =
-            v0 |> bl.toString
-
-        l1 =
-            v1 |> bl.toString
-
-        ymid =
-            (h - pad * 2) / 2.0
-
-        y0adj =
-            if y0 <= ymid then
-                1
-
-            else
-                -1
-
-        y1adj =
-            if y1 <= ymid then
-                1
-
-            else
-                -1
-
-        y0align =
-            if y0 <= ymid then
-                AlignmentHanging
-
-            else
-                AlignmentBaseline
-
-        y1align =
-            if y1 <= ymid then
-                AlignmentHanging
-
-            else
-                AlignmentBaseline
-
-        regcolor =
-            bapp.bounds
-
-        hcolor =
-            bapp.highlight
-
-        fsize =
-            bl.size
-    in
-    S.g
-        [ e |> elementOf "dim" "y" ]
-        (brushBoundsLinesInner bapp b "y" hlower hupper ( p0, p1 )
-            ++ [ S.text_
-                    [ el |> elementOfList [ ( "dim", "y" ), ( "type", "lower" ) ]
-                    , el |> elementIf "highlight" hlower
-                    , SA.transform [ ST.Translate xbaseline (y0 + y0adj) ]
-                    , SA.textAnchor AnchorStart
-                    , SA.alignmentBaseline y0align
-                    , SA.fill <|
-                        if hlower then
-                            hcolor
-
-                        else
-                            regcolor
-                    , SA.fontSize fsize
-                    , SA.style "pointer-events: none; user-select: none"
-                    ]
-                    [ text l0 ]
-               , S.text_
-                    [ el |> elementOfList [ ( "dim", "y" ), ( "type", "upper" ) ]
-                    , el |> elementIf "highlight" hupper
-                    , SA.transform [ ST.Translate xbaseline (y1 + y1adj) ]
-                    , SA.textAnchor AnchorStart
-                    , SA.alignmentBaseline y1align
-                    , SA.fill <|
-                        if hupper then
-                            hcolor
-
-                        else
-                            regcolor
-                    , SA.fontSize fsize
-                    , SA.style "pointer-events: none; user-select: none"
-                    ]
-                    (text l1
-                        :: percentDiffLabel
-                            [ SA.alignmentBaseline y1align
-                            , SA.fontSize fsize
-                            ]
-                            b
-                            v0
-                            v1
-                    )
-               ]
-        )
-
-
-percentDiffLabel :
-    List (Attribute msg)
-    -> Bem.Block
-    -> Float
-    -> Float
-    -> List (Svg msg)
-percentDiffLabel attrs b y0 y1 =
-    let
-        es =
-            b.element "percent-label-symbol"
-
-        ev =
-            b.element "percent-label-value"
-
-        pct =
-            (y1 - y0) / y0
-
-        ( tag, sym ) =
-            case compare pct 0.0 of
-                EQ ->
-                    ( "eq", " " )
-
-                GT ->
-                    ( "gt", "⯅" )
-
-                LT ->
-                    ( "lt", "⯆" )
-
-        disp =
-            (pct * 100 |> round |> abs |> String.fromInt) ++ "%"
-    in
-    [ S.tspan
-        ((es |> elementOf "diff" tag) :: attrs)
-        [ text sym ]
-    , S.tspan
-        ((ev |> elementOf "diff" tag) :: attrs)
-        [ text disp ]
-    ]
-
-
-
--- TODO: Finish implementing and move somewhere generic
-
-
-timeIntervalString : Time.Interval -> Time.Zone -> Time.Posix -> String
-timeIntervalString tint tz t =
-    case tint of
-        Time.Year ->
-            let
-                tparts =
-                    Time.posixToParts tz t
-            in
-            tparts.year |> String.fromInt
-
-        _ ->
-            "TODO"
 
 
 
