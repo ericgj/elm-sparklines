@@ -3,22 +3,22 @@ module Example.Simple exposing (columns, line, lineFacetsFreeY, lines)
 import Facet exposing (Scaling(..))
 import Html exposing (..)
 import Html.Attributes exposing (style)
+import Sparklines exposing (Highlight(..))
 import Time
 import Time.Extra as Time
 import Timeseries exposing (Series)
-import View.Simple exposing (Highlight(..))
 
 
 line : Time.Interval -> Time.Zone -> Series -> Html msg
 line tint tz data =
     let
         c =
-            View.Simple.lineConfig tint tz 200 80
-                |> View.Simple.withPadding 5.0
-                |> View.Simple.withHighlight HighlightMinMax
+            Sparklines.lineConfig tint tz 200 80
+                |> Sparklines.withPadding 5.0
+                |> Sparklines.withHighlight HighlightMinMax
     in
     div [ style "width" "200px" ]
-        [ View.Simple.line c Nothing data
+        [ Sparklines.line c Nothing data
         ]
 
 
@@ -26,12 +26,12 @@ lines : Time.Interval -> Time.Zone -> List Series -> Html msg
 lines tint tz datas =
     let
         c =
-            View.Simple.lineConfig tint tz 200 80
-                |> View.Simple.withPadding 5.0
-                |> View.Simple.withHighlight HighlightMinMax
+            Sparklines.lineConfig tint tz 200 80
+                |> Sparklines.withPadding 5.0
+                |> Sparklines.withHighlight HighlightMinMax
     in
     div [ style "width" "200px" ]
-        [ View.Simple.lines View.Simple.defaultColorPairs c datas
+        [ Sparklines.lines Sparklines.defaultColorPairs c datas
         ]
 
 
@@ -39,12 +39,12 @@ lineFacetsFreeY : Time.Interval -> Time.Zone -> List Series -> Html msg
 lineFacetsFreeY tint tz datas =
     let
         c =
-            View.Simple.lineConfig tint tz 200 80
-                |> View.Simple.withPadding 5.0
-                |> View.Simple.withHighlight HighlightMinMax
+            Sparklines.lineConfig tint tz 200 80
+                |> Sparklines.withPadding 5.0
+                |> Sparklines.withHighlight HighlightMinMax
     in
     div [ style "width" "200px" ]
-        (View.Simple.lineFacets
+        (Sparklines.lineFacets
             { x = Fixed, y = Free }
             c
             Nothing
@@ -56,15 +56,15 @@ columns : Time.Interval -> Time.Zone -> Series -> Html msg
 columns tint tz data =
     let
         c =
-            View.Simple.columnsConfig List.sum tint tz 200 80
-                |> View.Simple.withPadding 5.0
-                |> View.Simple.withHighlight HighlightMinMax
-                |> View.Simple.withBandConfig
+            Sparklines.columnsConfig List.sum tint tz 200 80
+                |> Sparklines.withPadding 5.0
+                |> Sparklines.withHighlight HighlightMinMax
+                |> Sparklines.withBandConfig
                     { paddingInner = 0.3
                     , paddingOuter = 0.0
                     , align = 0.5
                     }
     in
     div [ style "width" "200px" ]
-        [ View.Simple.columns c Nothing data
+        [ Sparklines.columns c Nothing data
         ]

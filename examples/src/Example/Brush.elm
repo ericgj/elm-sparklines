@@ -15,10 +15,10 @@ import Facet exposing (Scaling(..))
 import Html exposing (..)
 import Html.Attributes exposing (style)
 import Html.Bem as Bem exposing (elementIf)
+import Sparklines exposing (Highlight(..))
 import Time
 import Time.Extra as Time
 import Timeseries exposing (Observation, Series)
-import View.Simple exposing (Highlight(..))
 
 
 type alias Model =
@@ -67,19 +67,19 @@ line : Time.Interval -> Time.Zone -> Series -> Model -> Html Msg
 line tint tz data { frame, brush } =
     let
         c =
-            View.Simple.lineConfig tint tz frame.width frame.height
-                |> View.Simple.withPadding frame.padding
-                |> View.Simple.withHighlight HighlightMinMax
-                |> View.Simple.withBrushLabels
+            Sparklines.lineConfig tint tz frame.width frame.height
+                |> Sparklines.withPadding frame.padding
+                |> Sparklines.withHighlight HighlightMinMax
+                |> Sparklines.withBrushLabels
                     UpdateBrush
-                    View.Simple.defaultBrushingAppearance
-                    View.Simple.defaultBrushingLabels
+                    Sparklines.defaultBrushingAppearance
+                    Sparklines.defaultBrushingLabels
 
         wstr =
             frame.width |> round |> String.fromInt
 
         chdata =
-            View.Simple.lineData c (Just brush) data
+            Sparklines.lineData c (Just brush) data
     in
     div
         []
@@ -99,13 +99,13 @@ lineFacetsFreeY : Time.Interval -> Time.Zone -> List Series -> Model -> Html Msg
 lineFacetsFreeY tint tz data { frame, brush } =
     let
         c =
-            View.Simple.lineConfig tint tz frame.width frame.height
-                |> View.Simple.withPadding frame.padding
-                |> View.Simple.withHighlight HighlightMinMax
-                |> View.Simple.withBrushLabels
+            Sparklines.lineConfig tint tz frame.width frame.height
+                |> Sparklines.withPadding frame.padding
+                |> Sparklines.withHighlight HighlightMinMax
+                |> Sparklines.withBrushLabels
                     UpdateBrush
-                    View.Simple.defaultBrushingAppearance
-                    View.Simple.defaultBrushingLabels
+                    Sparklines.defaultBrushingAppearance
+                    Sparklines.defaultBrushingLabels
 
         wstr =
             frame.width |> round |> String.fromInt
@@ -113,7 +113,7 @@ lineFacetsFreeY tint tz data { frame, brush } =
     div
         []
         [ div [ style "width" <| wstr ++ "px" ]
-            (View.Simple.lineFacets
+            (Sparklines.lineFacets
                 { x = Fixed, y = Free }
                 c
                 (Just brush)
@@ -126,14 +126,14 @@ columns : Time.Interval -> Time.Zone -> Series -> Model -> Html Msg
 columns tint tz data { frame, brush } =
     let
         c =
-            View.Simple.columnsConfig List.sum tint tz frame.width frame.height
-                |> View.Simple.withPadding 5.0
-                |> View.Simple.withHighlight HighlightMinMax
-                |> View.Simple.withBrushLabels
+            Sparklines.columnsConfig List.sum tint tz frame.width frame.height
+                |> Sparklines.withPadding 5.0
+                |> Sparklines.withHighlight HighlightMinMax
+                |> Sparklines.withBrushLabels
                     UpdateBrush
-                    View.Simple.defaultBrushingAppearance
-                    View.Simple.defaultBrushingLabels
-                |> View.Simple.withBandConfig
+                    Sparklines.defaultBrushingAppearance
+                    Sparklines.defaultBrushingLabels
+                |> Sparklines.withBandConfig
                     { paddingInner = 0.3
                     , paddingOuter = 0.0
                     , align = 0.5
@@ -143,7 +143,7 @@ columns tint tz data { frame, brush } =
             frame.width |> round |> String.fromInt
 
         chdata =
-            View.Simple.columnsData c (Just brush) data
+            Sparklines.columnsData c (Just brush) data
     in
     div
         []

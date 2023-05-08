@@ -1,4 +1,4 @@
-module View.Simple exposing
+module Sparklines exposing
     ( BrushingAppearanceConfig
     , BrushingLabelsConfig
     , Config
