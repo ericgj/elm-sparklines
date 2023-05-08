@@ -14,9 +14,10 @@ import Brush exposing (Brush, OnBrush, OneDimensional)
 import Facet exposing (Scaling(..))
 import Html exposing (..)
 import Html.Attributes exposing (style)
+import Html.Bem as Bem exposing (elementIf)
 import Time
 import Time.Extra as Time
-import Timeseries exposing (Series)
+import Timeseries exposing (Observation, Series)
 import View.Simple exposing (Highlight(..))
 
 
@@ -76,16 +77,21 @@ line tint tz data { frame, brush } =
 
         wstr =
             frame.width |> round |> String.fromInt
+
+        chdata =
+            View.Simple.lineData c (Just brush) data
     in
     div
         []
         [ div [ style "width" <| wstr ++ "px" ]
-            [ View.Simple.line c (Just brush) data
+            [ chdata.chart
             ]
-        , ul []
-            (viewSelected tz data frame.padding brush
-                |> List.map (\i -> li [] [ i ])
-            )
+        , ul [] <|
+            List.map
+                (\obs ->
+                    li [] [ viewSelected tz chdata.highlighted obs ]
+                )
+                chdata.selected
         ]
 
 
@@ -135,16 +141,47 @@ columns tint tz data { frame, brush } =
 
         wstr =
             frame.width |> round |> String.fromInt
+
+        chdata =
+            View.Simple.columnsData c (Just brush) data
     in
     div
         []
-        [ div [ style "width" <| wstr ++ "px" ]
-            [ View.Simple.columns c (Just brush) data
-            ]
+        [ div
+            [ style "width" <| wstr ++ "px" ]
+            [ chdata.chart ]
+        , ul [] <|
+            List.map
+                (\obs ->
+                    li [] [ viewSelected tz chdata.highlighted obs ]
+                )
+                chdata.selected
         ]
 
 
-viewSelected : Time.Zone -> Series -> Float -> Brush OneDimensional -> List (Html msg)
-viewSelected tz data pad brush =
-    -- NOTE this can't work yet because we need the x-scale to calculate
-    [ text "" ]
+viewSelected : Time.Zone -> Series -> Observation -> Html msg
+viewSelected tz hdata ( x, y ) =
+    let
+        e =
+            Bem.init "examples-brush" |> (\b -> b.element "selected")
+
+        ishigh =
+            hdata
+                |> List.any
+                    (\( x_, _ ) -> Time.posixToMillis x_ == Time.posixToMillis x)
+
+        parts =
+            Time.posixToParts tz x
+    in
+    div
+        [ e |> elementIf "highlighted" ishigh ]
+        [ span
+            []
+            [ text <| String.fromInt <| parts.year ]
+        , span
+            []
+            [ text ":" ]
+        , span
+            []
+            [ text <| String.fromInt <| round <| y ]
+        ]

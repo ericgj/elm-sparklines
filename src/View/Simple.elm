@@ -4,14 +4,18 @@ module View.Simple exposing
     , Config
     , Highlight(..)
     , columnFacets
+    , columnFacetsData
     , columns
     , columnsConfig
+    , columnsData
     , defaultBrushingAppearance
     , defaultBrushingLabels
     , defaultColorPairs
     , line
     , lineConfig
+    , lineData
     , lineFacets
+    , lineFacetsData
     , lines
     , selectBrushed
     , withBandConfig
@@ -416,6 +420,523 @@ updateAppearanceBandConfig bc ac =
 
 
 
+-- -----------------------------------------------------------------------------
+-- OUTPUT DATA
+-- -----------------------------------------------------------------------------
+
+
+type alias ChartData msg =
+    { chart : Svg msg
+    , selected : Series
+    , highlighted : Series
+    }
+
+
+
+-- -----------------------------------------------------------------------------
+-- LINE CHARTS
+-- -----------------------------------------------------------------------------
+
+
+lineFacets :
+    Facet.Scaling2d
+    -> Config msg
+    -> Maybe (Brush OneDimensional)
+    -> List Series
+    -> List (Svg msg)
+lineFacets s c mbrush seqs =
+    lineFacetsData s c mbrush seqs |> List.map .chart
+
+
+lineFacetsData :
+    Facet.Scaling2d
+    -> Config msg
+    -> Maybe (Brush OneDimensional)
+    -> List Series
+    -> List (ChartData msg)
+lineFacetsData s c mbrush seqs =
+    let
+        b =
+            cssBlock c
+
+        w =
+            width c
+
+        h =
+            height c
+
+        brush =
+            viewBrush b (onBrush c) mbrush
+
+        sc =
+            lineScales s c seqs
+
+        inner xsc_ ysc_ seq_ =
+            let
+                d =
+                    lineInnerData Nothing xsc_ ysc_ c mbrush seq_
+            in
+            { chart = svg w h (d.chart :: brush)
+            , selected = d.selected
+            , highlighted = d.highlighted
+            }
+    in
+    case ( sc.x, sc.y ) of
+        ( FixedScale xsc, FixedScale ysc ) ->
+            seqs |> List.map (inner xsc ysc)
+
+        ( FixedScale xsc, FreeScales yscs ) ->
+            List.map2 (\ysc seq -> inner xsc ysc seq) yscs seqs
+
+        ( FreeScales xscs, FixedScale ysc ) ->
+            List.map2 (\xsc seq -> inner xsc ysc seq) xscs seqs
+
+        ( FreeScales xscs, FreeScales yscs ) ->
+            List.map3 inner xscs yscs seqs
+
+
+lines :
+    List ( Paint, Paint )
+    -> Config msg
+    -> List Series
+    -> Svg msg
+lines cpairs c seqs =
+    let
+        b =
+            cssBlock c
+
+        w =
+            width c
+
+        h =
+            height c
+
+        ( xr, yr ) =
+            ranges c
+
+        tz =
+            timeZone c
+
+        xsc =
+            Facet.fixedTimeScale tz Tuple.first xr seqs
+
+        ysc =
+            Facet.fixedLinearScale Tuple.second yr seqs
+
+        mcpairs =
+            seqs
+                |> List.length
+                |> List.range 0
+                |> List.map
+                    (\i ->
+                        List.cycle (i + 1) cpairs |> List.drop i |> List.head
+                    )
+
+        inners =
+            List.map2
+                (\mcpair seq ->
+                    lineInnerData mcpair xsc ysc c Nothing seq |> .chart
+                )
+                mcpairs
+                seqs
+    in
+    svg w h inners
+
+
+line : Config msg -> Maybe (Brush OneDimensional) -> Series -> Svg msg
+line c mbrush seq =
+    lineData c mbrush seq |> .chart
+
+
+lineData : Config msg -> Maybe (Brush OneDimensional) -> Series -> ChartData msg
+lineData c mbrush seq =
+    let
+        b =
+            cssBlock c
+
+        w =
+            width c
+
+        h =
+            height c
+
+        ( xr, yr ) =
+            ranges c
+
+        tz =
+            timeZone c
+
+        xsc =
+            Facet.timeScale tz Tuple.first xr seq
+
+        ysc =
+            Facet.linearScale Tuple.second yr seq
+
+        inner =
+            lineInnerData Nothing xsc ysc c mbrush seq
+
+        brush =
+            viewBrush b (onBrush c) mbrush
+    in
+    { chart = svg w h (inner.chart :: brush)
+    , selected = inner.selected
+    , highlighted = inner.highlighted
+    }
+
+
+lineInnerData :
+    Maybe ( Paint, Paint )
+    -> ContinuousScale Time.Posix
+    -> ContinuousScale Float
+    -> Config msg
+    -> Maybe (Brush OneDimensional)
+    -> Series
+    -> ChartData msg
+lineInnerData mcpair xsc ysc c mbrush data =
+    let
+        b =
+            cssBlock c
+
+        e =
+            b.element "chart"
+
+        el =
+            b.element "line"
+
+        pad =
+            padding c
+
+        ( linecolor, highlightcolor ) =
+            mcpair
+                |> Maybe.withDefault ( color c, highlightColor c )
+
+        linewidth =
+            observationWidth c
+
+        highlighted =
+            data |> selectHighlights (highlight c)
+
+        linepath =
+            data
+                |> scaledPoints ( 0, 0 ) (LineScale xsc) ysc
+                |> Shape.line Shape.linearCurve
+
+        brushoverlay =
+            mbrush
+                |> Maybe.andThen
+                    (\brush -> lineBrushOverlay b c xsc ysc brush highlighted data)
+
+        circles =
+            highlightCircles
+                b
+                highlightcolor
+                (linewidth * 2.0)
+                ( 0, 0 )
+                (LineScale xsc)
+                ysc
+                highlighted
+
+        chart =
+            S.g
+                [ e |> element
+                , SA.transform [ ST.Translate pad pad ]
+                ]
+                (Path.element linepath
+                    [ el |> element
+                    , SA.stroke <| linecolor
+                    , SA.strokeWidth <| Px linewidth
+                    , SA.fill PaintNone
+                    ]
+                    :: (brushoverlay |> Maybe.map .chart |> Maybe.withDefault (text ""))
+                    :: circles
+                )
+    in
+    { chart = chart
+    , selected = brushoverlay |> Maybe.map .selected |> Maybe.withDefault []
+    , highlighted = highlighted
+    }
+
+
+highlightCircles :
+    Bem.Block
+    -> Paint
+    -> Float
+    -> ( Float, Float )
+    -> ChartScaleX
+    -> ContinuousScale Float
+    -> Series
+    -> List (Svg msg)
+highlightCircles b fillcolor radius ( xadj, yadj ) xsc ysc data =
+    let
+        points =
+            data |> scaledPoints ( xadj, yadj ) xsc ysc
+    in
+    points
+        |> List.filterMap (Maybe.map (highlightCircle b fillcolor radius))
+
+
+highlightCircle : Bem.Block -> Paint -> Float -> ( Float, Float ) -> Svg msg
+highlightCircle b fillcolor radius ( x, y ) =
+    let
+        e =
+            b.element "highlight"
+
+        ep =
+            b.element "point"
+    in
+    S.g [ e |> element ]
+        [ pointToCircle ep fillcolor radius ( x, y )
+        ]
+
+
+pointToCircle : Bem.Element -> Paint -> Float -> ( Float, Float ) -> Svg msg
+pointToCircle e fillcolor radius ( x, y ) =
+    S.g [ e |> element ]
+        [ S.circle
+            [ SA.cx <| Px <| x
+            , SA.cy <| Px <| y
+            , SA.r <| Px radius
+            , SA.fill <| fillcolor
+            , SA.strokeWidth <| Px 0
+            , SA.stroke <| PaintNone
+            ]
+            []
+        ]
+
+
+
+-- -----------------------------------------------------------------------------
+-- COLUMN CHARTS
+-- -----------------------------------------------------------------------------
+
+
+columnFacets :
+    Facet.Scaling2d
+    -> Config msg
+    -> Maybe (Brush OneDimensional)
+    -> List Series
+    -> List (Svg msg)
+columnFacets s c mbrush seqs =
+    columnFacetsData s c mbrush seqs |> List.map .chart
+
+
+columnFacetsData :
+    Facet.Scaling2d
+    -> Config msg
+    -> Maybe (Brush OneDimensional)
+    -> List Series
+    -> List (ChartData msg)
+columnFacetsData s c mbrush seqs =
+    let
+        w =
+            width c
+
+        h =
+            height c
+
+        tint =
+            timeInterval c
+
+        tz =
+            timeZone c
+
+        agg =
+            aggregate c
+
+        seqs_ =
+            case s.x of
+                Free ->
+                    seqs
+                        |> List.map (Timeseries.groupByIntervals agg tint tz)
+
+                Fixed ->
+                    seqs |> Timeseries.groupByIntervalsMultiple agg tint tz
+
+        sc =
+            columnScales s c seqs_
+
+        inner xsc_ ysc_ seq_ =
+            let
+                d =
+                    columnsInnerData h xsc_ ysc_ c mbrush seq_
+            in
+            { chart = svg w h [ d.chart ]
+            , selected = d.selected
+            , highlighted = d.highlighted
+            }
+    in
+    case ( sc.x, sc.y ) of
+        ( FixedScale xsc, FixedScale ysc ) ->
+            List.map (inner xsc ysc) seqs_
+
+        ( FixedScale xsc, FreeScales yscs ) ->
+            List.map2 (inner xsc) yscs seqs_
+
+        ( FreeScales xscs, FixedScale ysc ) ->
+            List.map2 (\xsc seq -> inner xsc ysc seq) xscs seqs_
+
+        ( FreeScales xscs, FreeScales yscs ) ->
+            List.map3 inner xscs yscs seqs_
+
+
+columns : Config msg -> Maybe (Brush OneDimensional) -> Series -> Svg msg
+columns c mbrush data =
+    columnsData c mbrush data |> .chart
+
+
+columnsData : Config msg -> Maybe (Brush OneDimensional) -> Series -> ChartData msg
+columnsData c mbrush data =
+    let
+        b =
+            cssBlock c
+
+        tint =
+            timeInterval c
+
+        tz =
+            timeZone c
+
+        bc =
+            bandConfig c
+
+        w =
+            width c
+
+        h =
+            height c
+
+        ( xr, yr ) =
+            ranges c
+
+        fn =
+            aggregate c
+
+        data_ =
+            Timeseries.groupByIntervals fn tint tz data
+
+        xsc =
+            Facet.timeBandScale bc Tuple.first xr data_
+
+        ysc =
+            Facet.linearScale Tuple.second yr data_
+
+        inner =
+            columnsInnerData h xsc ysc c mbrush data_
+
+        brush =
+            viewBrush b (onBrush c) mbrush
+
+        chart =
+            svg w
+                h
+                (inner.chart :: brush)
+    in
+    { chart = chart
+    , selected = inner.selected
+    , highlighted = inner.highlighted
+    }
+
+
+columnsInnerData :
+    Float
+    -> BandScale Time.Posix
+    -> ContinuousScale Float
+    -> Config msg
+    -> Maybe (Brush OneDimensional)
+    -> Series
+    -> ChartData msg
+columnsInnerData h xsc ysc c mbrush data =
+    let
+        pad =
+            padding c
+
+        b =
+            cssBlock c
+
+        e =
+            b.element "columns"
+
+        ec =
+            b.element "column"
+
+        cbar =
+            color c
+
+        chigh =
+            highlightColor c
+
+        wcol =
+            observationWidth c
+
+        bw =
+            Scale.bandwidth xsc
+
+        highlighted =
+            data |> selectHighlights (highlight c)
+
+        brushoverlay =
+            mbrush
+                |> Maybe.andThen
+                    (\brush -> columnsBrushOverlay b c xsc ysc brush highlighted data)
+
+        circles =
+            highlightCircles
+                b
+                chigh
+                (wcol * 2)
+                ( bw / 2, 0.0 )
+                (ColumnsScale xsc)
+                ysc
+                highlighted
+
+        chart =
+            S.g
+                [ SA.transform [ ST.Translate pad pad ]
+                ]
+                (S.g
+                    [ e |> element ]
+                    (data |> List.map (columnInner ec cbar h pad xsc ysc highlighted))
+                    :: (brushoverlay |> Maybe.map .chart |> Maybe.withDefault (text ""))
+                    :: circles
+                )
+    in
+    { chart = chart
+    , selected = brushoverlay |> Maybe.map .selected |> Maybe.withDefault []
+    , highlighted = highlighted
+    }
+
+
+columnInner :
+    Bem.Element
+    -> Paint
+    -> Float
+    -> Float
+    -> BandScale Time.Posix
+    -> ContinuousScale Float
+    -> Series
+    -> Observation
+    -> Svg msg
+columnInner e cbar h pad xsc ysc hs ( x, y ) =
+    let
+        ishigh =
+            hs
+                |> List.any
+                    (\( x_, _ ) -> Time.posixToMillis x_ == Time.posixToMillis x)
+    in
+    S.rect
+        [ e |> elementIf "highlight" ishigh
+        , SA.x <| Px <| Scale.convert xsc x
+        , SA.y <| Px <| Scale.convert ysc y
+        , SA.width <| Px <| Scale.bandwidth xsc
+        , SA.height <| Px <| (h - Scale.convert ysc y) - (pad * 2)
+        , SA.fill cbar
+        , SA.stroke cbar
+        , SA.strokeWidth <| Px <| 0.25
+        ]
+        []
+
+
+
 --------------------------------------------------------------------------------
 -- FACET SCALING
 --------------------------------------------------------------------------------
@@ -798,7 +1319,7 @@ lineBrushOverlay :
     -> Brush OneDimensional
     -> Series
     -> Series
-    -> Maybe (Svg msg)
+    -> Maybe (ChartData msg)
 lineBrushOverlay b c xsc ysc brush hdata data =
     case brushing c of
         NoBrush ->
@@ -831,7 +1352,7 @@ lineBrushOverlayHelp :
     -> Brush OneDimensional
     -> Series
     -> Series
-    -> Svg msg
+    -> ChartData msg
 lineBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
     let
         e =
@@ -881,15 +1402,21 @@ lineBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
                 hlower
                 hupper
                 selected
+
+        chart =
+            S.g
+                [ e |> element ]
+                [ Path.element brusharea
+                    [ ea |> element
+                    , SA.fill bapp.area
+                    ]
+                , brushlabels |> Maybe.withDefault (text "")
+                ]
     in
-    S.g
-        [ e |> element ]
-        [ Path.element brusharea
-            [ ea |> element
-            , SA.fill bapp.area
-            ]
-        , brushlabels |> Maybe.withDefault (text "")
-        ]
+    { chart = chart
+    , selected = selected
+    , highlighted = hdata
+    }
 
 
 columnsBrushOverlay :
@@ -900,7 +1427,7 @@ columnsBrushOverlay :
     -> Brush OneDimensional
     -> Series
     -> Series
-    -> Maybe (Svg msg)
+    -> Maybe (ChartData msg)
 columnsBrushOverlay b c xsc ysc brush hdata data =
     case brushing c of
         NoBrush ->
@@ -933,7 +1460,7 @@ columnsBrushOverlayHelp :
     -> Brush OneDimensional
     -> Series
     -> Series
-    -> Svg msg
+    -> ChartData msg
 columnsBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
     let
         e =
@@ -983,12 +1510,18 @@ columnsBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data
                 hlower
                 hupper
                 selected
+
+        chart =
+            S.g
+                [ e |> element ]
+                (List.map (columnInner ec bapp.area h pad xsc ysc hdata) selected
+                    ++ (brushlabels |> Maybe.map List.singleton |> Maybe.withDefault [])
+                )
     in
-    S.g
-        [ e |> element ]
-        (List.map (columnInner ec bapp.area h pad xsc ysc hdata) selected
-            ++ (brushlabels |> Maybe.map List.singleton |> Maybe.withDefault [])
-        )
+    { chart = chart
+    , selected = selected
+    , highlighted = hdata
+    }
 
 
 brushOverlayBoundsAndLabels :
@@ -1575,491 +2108,11 @@ timeIntervalString tint tz t =
 
 
 -- -----------------------------------------------------------------------------
--- LINE CHARTS
+-- UTILS
 -- -----------------------------------------------------------------------------
 
 
-lineFacets :
-    Facet.Scaling2d
-    -> Config msg
-    -> Maybe (Brush OneDimensional)
-    -> List Series
-    -> List (Svg msg)
-lineFacets s c mbrush seqs =
-    let
-        b =
-            cssBlock c
-
-        w =
-            width c
-
-        h =
-            height c
-
-        brush =
-            viewBrush b (onBrush c) mbrush
-
-        sc =
-            lineScales s c seqs
-    in
-    case ( sc.x, sc.y ) of
-        ( FixedScale xsc, FixedScale ysc ) ->
-            List.map
-                (\seq ->
-                    S.svg
-                        [ SA.viewBox 0 0 w h ]
-                        (lineInner Nothing xsc ysc c mbrush seq :: brush)
-                )
-                seqs
-
-        ( FixedScale xsc, FreeScales yscs ) ->
-            List.map2
-                (\ysc seq ->
-                    S.svg
-                        [ SA.viewBox 0 0 w h ]
-                        (lineInner Nothing xsc ysc c mbrush seq :: brush)
-                )
-                yscs
-                seqs
-
-        ( FreeScales xscs, FixedScale ysc ) ->
-            List.map2
-                (\xsc seq ->
-                    S.svg
-                        [ SA.viewBox 0 0 w h ]
-                        (lineInner Nothing xsc ysc c mbrush seq :: brush)
-                )
-                xscs
-                seqs
-
-        ( FreeScales xscs, FreeScales yscs ) ->
-            List.map3
-                (\xsc ysc seq ->
-                    S.svg
-                        [ SA.viewBox 0 0 w h ]
-                        (lineInner Nothing xsc ysc c mbrush seq :: brush)
-                )
-                xscs
-                yscs
-                seqs
-
-
-lines :
-    List ( Paint, Paint )
-    -> Config msg
-    -> Maybe (Brush OneDimensional)
-    -> List Series
-    -> Svg msg
-lines cpairs c mbrush seqs =
-    let
-        b =
-            cssBlock c
-
-        w =
-            width c
-
-        h =
-            height c
-
-        ( xr, yr ) =
-            ranges c
-
-        tz =
-            timeZone c
-
-        xsc =
-            Facet.fixedTimeScale tz Tuple.first xr seqs
-
-        ysc =
-            Facet.fixedLinearScale Tuple.second yr seqs
-
-        mcpairs =
-            seqs
-                |> List.length
-                |> List.range 0
-                |> List.map
-                    (\i ->
-                        List.cycle (i + 1) cpairs |> List.drop i |> List.head
-                    )
-
-        inners =
-            List.map2
-                (\mcpair seq ->
-                    lineInner mcpair xsc ysc c mbrush seq
-                )
-                mcpairs
-                seqs
-
-        brush =
-            viewBrush b (onBrush c) mbrush
-    in
+svg : Float -> Float -> List (Svg msg) -> Svg msg
+svg w h =
     S.svg
-        [ SA.viewBox 0 0 w h ]
-        (inners ++ brush)
-
-
-line : Config msg -> Maybe (Brush OneDimensional) -> Series -> Svg msg
-line c mbrush seq =
-    let
-        b =
-            cssBlock c
-
-        w =
-            width c
-
-        h =
-            height c
-
-        ( xr, yr ) =
-            ranges c
-
-        tz =
-            timeZone c
-
-        xsc =
-            Facet.timeScale tz Tuple.first xr seq
-
-        ysc =
-            Facet.linearScale Tuple.second yr seq
-
-        inner =
-            lineInner Nothing xsc ysc c mbrush seq
-
-        brush =
-            viewBrush b (onBrush c) mbrush
-    in
-    S.svg
-        [ SA.viewBox 0 0 w h ]
-        (inner :: brush)
-
-
-lineInner :
-    Maybe ( Paint, Paint )
-    -> ContinuousScale Time.Posix
-    -> ContinuousScale Float
-    -> Config msg
-    -> Maybe (Brush OneDimensional)
-    -> Series
-    -> Svg msg
-lineInner mcpair xsc ysc c mbrush data =
-    let
-        b =
-            cssBlock c
-
-        e =
-            b.element "chart"
-
-        el =
-            b.element "line"
-
-        pad =
-            padding c
-
-        ( linecolor, highlightcolor ) =
-            mcpair
-                |> Maybe.withDefault ( color c, highlightColor c )
-
-        linewidth =
-            observationWidth c
-
-        highlights =
-            data |> selectHighlights (highlight c)
-
-        linepath =
-            data
-                |> scaledPoints ( 0, 0 ) (LineScale xsc) ysc
-                |> Shape.line Shape.linearCurve
-
-        brushoverlay =
-            mbrush
-                |> Maybe.andThen
-                    (\brush -> lineBrushOverlay b c xsc ysc brush highlights data)
-
-        circles =
-            highlightCircles
-                b
-                highlightcolor
-                (linewidth * 2.0)
-                ( 0, 0 )
-                (LineScale xsc)
-                ysc
-                highlights
-    in
-    S.g
-        [ e |> element
-        , SA.transform [ ST.Translate pad pad ]
-        ]
-        (Path.element linepath
-            [ el |> element
-            , SA.stroke <| linecolor
-            , SA.strokeWidth <| Px linewidth
-            , SA.fill PaintNone
-            ]
-            :: (brushoverlay |> Maybe.withDefault (text ""))
-            :: circles
-        )
-
-
-highlightCircles :
-    Bem.Block
-    -> Paint
-    -> Float
-    -> ( Float, Float )
-    -> ChartScaleX
-    -> ContinuousScale Float
-    -> Series
-    -> List (Svg msg)
-highlightCircles b fillcolor radius ( xadj, yadj ) xsc ysc data =
-    let
-        points =
-            data |> scaledPoints ( xadj, yadj ) xsc ysc
-    in
-    points
-        |> List.filterMap (Maybe.map (highlightCircle b fillcolor radius))
-
-
-highlightCircle : Bem.Block -> Paint -> Float -> ( Float, Float ) -> Svg msg
-highlightCircle b fillcolor radius ( x, y ) =
-    let
-        e =
-            b.element "highlight"
-
-        ep =
-            b.element "point"
-    in
-    S.g [ e |> element ]
-        [ pointToCircle ep fillcolor radius ( x, y )
-        ]
-
-
-pointToCircle : Bem.Element -> Paint -> Float -> ( Float, Float ) -> Svg msg
-pointToCircle e fillcolor radius ( x, y ) =
-    S.g [ e |> element ]
-        [ S.circle
-            [ SA.cx <| Px <| x
-            , SA.cy <| Px <| y
-            , SA.r <| Px radius
-            , SA.fill <| fillcolor
-            , SA.strokeWidth <| Px 0
-            , SA.stroke <| PaintNone
-            ]
-            []
-        ]
-
-
-
--- -----------------------------------------------------------------------------
--- COLUMN VIEWS
--- -----------------------------------------------------------------------------
-
-
-columnFacets : Facet.Scaling2d -> Config msg -> Maybe (Brush OneDimensional) -> List Series -> List (Svg msg)
-columnFacets s c mbrush seqs =
-    let
-        w =
-            width c
-
-        h =
-            height c
-
-        tint =
-            timeInterval c
-
-        tz =
-            timeZone c
-
-        agg =
-            aggregate c
-
-        seqs_ =
-            case s.x of
-                Free ->
-                    seqs
-                        |> List.map (Timeseries.groupByIntervals agg tint tz)
-
-                Fixed ->
-                    seqs |> Timeseries.groupByIntervalsMultiple agg tint tz
-
-        sc =
-            columnScales s c seqs_
-    in
-    case ( sc.x, sc.y ) of
-        ( FixedScale xsc, FixedScale ysc ) ->
-            List.map
-                (\seq ->
-                    S.svg
-                        [ SA.viewBox 0 0 w h ]
-                        [ columnsInner h xsc ysc c mbrush seq ]
-                )
-                seqs_
-
-        ( FixedScale xsc, FreeScales yscs ) ->
-            List.map2
-                (\ysc seq ->
-                    S.svg
-                        [ SA.viewBox 0 0 w h ]
-                        [ columnsInner h xsc ysc c mbrush seq ]
-                )
-                yscs
-                seqs_
-
-        ( FreeScales xscs, FixedScale ysc ) ->
-            List.map2
-                (\xsc seq ->
-                    S.svg
-                        [ SA.viewBox 0 0 w h ]
-                        [ columnsInner h xsc ysc c mbrush seq ]
-                )
-                xscs
-                seqs_
-
-        ( FreeScales xscs, FreeScales yscs ) ->
-            List.map3
-                (\xsc ysc seq ->
-                    S.svg
-                        [ SA.viewBox 0 0 w h ]
-                        [ columnsInner h xsc ysc c mbrush seq ]
-                )
-                xscs
-                yscs
-                seqs_
-
-
-columns : Config msg -> Maybe (Brush OneDimensional) -> Series -> Svg msg
-columns c mbrush data =
-    let
-        b =
-            cssBlock c
-
-        tint =
-            timeInterval c
-
-        tz =
-            timeZone c
-
-        bc =
-            bandConfig c
-
-        w =
-            width c
-
-        h =
-            height c
-
-        ( xr, yr ) =
-            ranges c
-
-        fn =
-            aggregate c
-
-        data_ =
-            Timeseries.groupByIntervals fn tint tz data
-
-        xsc =
-            Facet.timeBandScale bc Tuple.first xr data_
-
-        ysc =
-            Facet.linearScale Tuple.second yr data_
-
-        inner =
-            columnsInner h xsc ysc c mbrush data_
-
-        brush =
-            viewBrush b (onBrush c) mbrush
-    in
-    S.svg
-        [ SA.viewBox 0 0 w h ]
-        (inner :: brush)
-
-
-columnsInner :
-    Float
-    -> BandScale Time.Posix
-    -> ContinuousScale Float
-    -> Config msg
-    -> Maybe (Brush OneDimensional)
-    -> Series
-    -> Svg msg
-columnsInner h xsc ysc c mbrush data =
-    let
-        pad =
-            padding c
-
-        b =
-            cssBlock c
-
-        e =
-            b.element "columns"
-
-        ec =
-            b.element "column"
-
-        cbar =
-            color c
-
-        chigh =
-            highlightColor c
-
-        wcol =
-            observationWidth c
-
-        bw =
-            Scale.bandwidth xsc
-
-        highlights =
-            data |> selectHighlights (highlight c)
-
-        brushoverlay =
-            mbrush
-                |> Maybe.andThen
-                    (\brush -> columnsBrushOverlay b c xsc ysc brush highlights data)
-
-        circles =
-            highlightCircles
-                b
-                chigh
-                (wcol * 2)
-                ( bw / 2, 0.0 )
-                (ColumnsScale xsc)
-                ysc
-                highlights
-    in
-    S.g
-        [ SA.transform [ ST.Translate pad pad ]
-        ]
-        (S.g
-            [ e |> element ]
-            (data |> List.map (columnInner ec cbar h pad xsc ysc highlights))
-            :: (brushoverlay |> Maybe.withDefault (text ""))
-            :: circles
-        )
-
-
-columnInner :
-    Bem.Element
-    -> Paint
-    -> Float
-    -> Float
-    -> BandScale Time.Posix
-    -> ContinuousScale Float
-    -> Series
-    -> Observation
-    -> Svg msg
-columnInner e cbar h pad xsc ysc hs ( x, y ) =
-    let
-        ishigh =
-            hs
-                |> List.any
-                    (\( x_, _ ) -> Time.posixToMillis x_ == Time.posixToMillis x)
-    in
-    S.rect
-        [ e |> elementIf "highlight" ishigh
-        , SA.x <| Px <| Scale.convert xsc x
-        , SA.y <| Px <| Scale.convert ysc y
-        , SA.width <| Px <| Scale.bandwidth xsc
-        , SA.height <| Px <| (h - Scale.convert ysc y) - (pad * 2)
-        , SA.fill cbar
-        , SA.stroke cbar
-        , SA.strokeWidth <| Px <| 0.25
-        ]
-        []
+        [ SA.viewBox 0 0 w h, SA.width <| Px w, SA.height <| Px h ]

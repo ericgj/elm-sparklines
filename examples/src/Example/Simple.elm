@@ -13,7 +13,7 @@ line : Time.Interval -> Time.Zone -> Series -> Html msg
 line tint tz data =
     let
         c =
-            View.Simple.lineConfig tint tz 100 40
+            View.Simple.lineConfig tint tz 200 80
                 |> View.Simple.withPadding 5.0
                 |> View.Simple.withHighlight HighlightMinMax
     in
@@ -26,12 +26,12 @@ lines : Time.Interval -> Time.Zone -> List Series -> Html msg
 lines tint tz datas =
     let
         c =
-            View.Simple.lineConfig tint tz 100 40
+            View.Simple.lineConfig tint tz 200 80
                 |> View.Simple.withPadding 5.0
                 |> View.Simple.withHighlight HighlightMinMax
     in
     div [ style "width" "200px" ]
-        [ View.Simple.lines View.Simple.defaultColorPairs c Nothing datas
+        [ View.Simple.lines View.Simple.defaultColorPairs c datas
         ]
 
 
@@ -39,7 +39,7 @@ lineFacetsFreeY : Time.Interval -> Time.Zone -> List Series -> Html msg
 lineFacetsFreeY tint tz datas =
     let
         c =
-            View.Simple.lineConfig tint tz 100 50
+            View.Simple.lineConfig tint tz 200 80
                 |> View.Simple.withPadding 5.0
                 |> View.Simple.withHighlight HighlightMinMax
     in
@@ -56,7 +56,7 @@ columns : Time.Interval -> Time.Zone -> Series -> Html msg
 columns tint tz data =
     let
         c =
-            View.Simple.columnsConfig List.sum tint tz 100 40
+            View.Simple.columnsConfig List.sum tint tz 200 80
                 |> View.Simple.withPadding 5.0
                 |> View.Simple.withHighlight HighlightMinMax
                 |> View.Simple.withBandConfig
