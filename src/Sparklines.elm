@@ -897,7 +897,7 @@ lineInnerData mcpair xsc ysc c mbrush data =
                 (Path.element linepath
                     [ el |> element
                     , SA.stroke <| linecolor
-                    , SA.strokeWidth <| Px linewidth
+                    , SA.strokeWidth <| Num linewidth
                     , SA.fill PaintNone
                     ]
                     :: (brushoverlay |> Maybe.map .chart |> Maybe.withDefault (text ""))
@@ -946,11 +946,11 @@ pointToCircle : Bem.Element -> Paint -> Float -> ( Float, Float ) -> Svg msg
 pointToCircle e fillcolor radius ( x, y ) =
     S.g [ e |> element ]
         [ S.circle
-            [ SA.cx <| Px <| x
-            , SA.cy <| Px <| y
-            , SA.r <| Px radius
+            [ SA.cx <| Num <| x
+            , SA.cy <| Num <| y
+            , SA.r <| Num radius
             , SA.fill <| fillcolor
-            , SA.strokeWidth <| Px 0
+            , SA.strokeWidth <| Num 0
             , SA.stroke <| PaintNone
             ]
             []
@@ -1210,13 +1210,13 @@ columnInner e cbar h pad xsc ysc hs ( x, y ) =
     in
     S.rect
         [ e |> elementIf "highlight" ishigh
-        , SA.x <| Px <| Scale.convert xsc x
-        , SA.y <| Px <| Scale.convert ysc y
-        , SA.width <| Px <| Scale.bandwidth xsc
-        , SA.height <| Px <| (h - Scale.convert ysc y) - (pad * 2)
+        , SA.x <| Num <| Scale.convert xsc x
+        , SA.y <| Num <| Scale.convert ysc y
+        , SA.width <| Num <| Scale.bandwidth xsc
+        , SA.height <| Num <| (h - Scale.convert ysc y) - (pad * 2)
         , SA.fill cbar
         , SA.stroke cbar
-        , SA.strokeWidth <| Px <| 0.25
+        , SA.strokeWidth <| Num <| 0.25
         ]
         []
 
@@ -1566,10 +1566,10 @@ viewBrush b mmsg mbrush =
 
         brushrect ext attrs =
             S.rect
-                ((SA.x <| Px <| ext.left)
-                    :: (SA.y <| Px <| ext.top)
-                    :: (SA.width <| Px <| ext.right - ext.left)
-                    :: (SA.height <| Px <| ext.bottom - ext.top)
+                ((SA.x <| Num <| ext.left)
+                    :: (SA.y <| Num <| ext.top)
+                    :: (SA.width <| Num <| ext.right - ext.left)
+                    :: (SA.height <| Num <| ext.bottom - ext.top)
                     :: (SA.fillOpacity <| Opacity <| 0.0)
                     :: SA.shapeRendering RenderCrispEdges
                     :: attrs
@@ -2274,8 +2274,8 @@ brushLabelFilter idname p =
     in
     S.filter
         [ SA.id idname
-        , SA.x <| Px -0.05
-        , SA.y <| Px -0.05
+        , SA.x <| Num -0.05
+        , SA.y <| Num -0.05
         , SA.width <| Num 1.1
         , SA.height <| Num 1.1
         ]
@@ -2400,4 +2400,4 @@ timeIntervalString tint tz t =
 svg : Float -> Float -> List (Svg msg) -> Svg msg
 svg w h =
     S.svg
-        [ SA.viewBox 0 0 w h, SA.width <| Px w, SA.height <| Px h ]
+        [ SA.viewBox 0 0 w h ]
