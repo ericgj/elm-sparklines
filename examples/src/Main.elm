@@ -192,7 +192,7 @@ view (Model st m) =
                 b
                 "Simple line"
                 (\_ ->
-                    Example.Simple.line Time.Year m.timeZone (totalSeries m.timeZone m.data)
+                    Example.Simple.line m.timeZone (totalSeries m.timeZone m.data)
                 )
                 ToggleSimpleLine
                 (\_ -> NoOp)
@@ -202,7 +202,6 @@ view (Model st m) =
                 "Simple lines"
                 (\_ ->
                     Example.Simple.lines
-                        Time.Year
                         m.timeZone
                         [ femaleBlackSeries m.timeZone m.data
                         , femaleWhiteSeries m.timeZone m.data
@@ -216,7 +215,6 @@ view (Model st m) =
                 "Simple line facets, free Y"
                 (\_ ->
                     Example.Simple.lineFacetsFreeY
-                        Time.Year
                         m.timeZone
                         [ maleBlackSeries m.timeZone m.data
                         , maleWhiteSeries m.timeZone m.data
@@ -231,7 +229,6 @@ view (Model st m) =
                 b
                 "Line with brushing"
                 (Example.Brush.line
-                    Time.Year
                     m.timeZone
                     (totalSeries m.timeZone m.data)
                 )
@@ -242,7 +239,6 @@ view (Model st m) =
                 b
                 "Line facets with brushing, free Y"
                 (Example.Brush.lineFacetsFreeY
-                    Time.Year
                     m.timeZone
                     [ maleBlackSeries m.timeZone m.data
                     , maleWhiteSeries m.timeZone m.data

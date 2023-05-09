@@ -63,11 +63,11 @@ subscriptions model =
     Brush.subscriptions model.brush UpdateBrush
 
 
-line : Time.Interval -> Time.Zone -> Series -> Model -> Html Msg
-line tint tz data { frame, brush } =
+line : Time.Zone -> Series -> Model -> Html Msg
+line tz data { frame, brush } =
     let
         c =
-            Sparklines.lineConfig tint tz frame.width frame.height
+            Sparklines.lineConfig tz frame.width frame.height
                 |> Sparklines.withPadding frame.padding
                 |> Sparklines.withHighlight HighlightMinMax
                 |> Sparklines.withBrushLabels
@@ -95,11 +95,11 @@ line tint tz data { frame, brush } =
         ]
 
 
-lineFacetsFreeY : Time.Interval -> Time.Zone -> List Series -> Model -> Html Msg
-lineFacetsFreeY tint tz data { frame, brush } =
+lineFacetsFreeY : Time.Zone -> List Series -> Model -> Html Msg
+lineFacetsFreeY tz data { frame, brush } =
     let
         c =
-            Sparklines.lineConfig tint tz frame.width frame.height
+            Sparklines.lineConfig tz frame.width frame.height
                 |> Sparklines.withPadding frame.padding
                 |> Sparklines.withHighlight HighlightMinMax
                 |> Sparklines.withBrushLabels

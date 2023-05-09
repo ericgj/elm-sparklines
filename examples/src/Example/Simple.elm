@@ -9,11 +9,11 @@ import Time.Extra as Time
 import Timeseries exposing (Series)
 
 
-line : Time.Interval -> Time.Zone -> Series -> Html msg
-line tint tz data =
+line : Time.Zone -> Series -> Html msg
+line tz data =
     let
         c =
-            Sparklines.lineConfig tint tz 200 80
+            Sparklines.lineConfig tz 200 80
                 |> Sparklines.withPadding 5.0
                 |> Sparklines.withHighlight HighlightMinMax
     in
@@ -22,11 +22,11 @@ line tint tz data =
         ]
 
 
-lines : Time.Interval -> Time.Zone -> List Series -> Html msg
-lines tint tz datas =
+lines : Time.Zone -> List Series -> Html msg
+lines tz datas =
     let
         c =
-            Sparklines.lineConfig tint tz 200 80
+            Sparklines.lineConfig tz 200 80
                 |> Sparklines.withPadding 5.0
                 |> Sparklines.withHighlight HighlightMinMax
     in
@@ -35,11 +35,11 @@ lines tint tz datas =
         ]
 
 
-lineFacetsFreeY : Time.Interval -> Time.Zone -> List Series -> Html msg
-lineFacetsFreeY tint tz datas =
+lineFacetsFreeY : Time.Zone -> List Series -> Html msg
+lineFacetsFreeY tz datas =
     let
         c =
-            Sparklines.lineConfig tint tz 200 80
+            Sparklines.lineConfig tz 200 80
                 |> Sparklines.withPadding 5.0
                 |> Sparklines.withHighlight HighlightMinMax
     in

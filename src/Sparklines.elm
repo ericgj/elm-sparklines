@@ -1,31 +1,111 @@
 module Sparklines exposing
-    ( BrushingAppearanceConfig
-    , BrushingLabelsConfig
-    , Config
+    ( line, lines, columns
+    , lineFacets, columnsFacets
+    , ChartData, lineData, lineFacetsData, columnsData, columnsFacetsData
     , Highlight(..)
-    , columnFacets
-    , columnFacetsData
-    , columns
-    , columnsConfig
-    , columnsData
-    , defaultBrushingAppearance
-    , defaultBrushingLabels
-    , defaultColorPairs
-    , line
-    , lineConfig
-    , lineData
-    , lineFacets
-    , lineFacetsData
-    , lines
-    , selectBrushed
-    , withBandConfig
-    , withBrush
-    , withBrushLabels
-    , withBrushLabelsX
-    , withBrushLabelsY
-    , withHighlight
-    , withPadding
+    , lineConfig, columnsConfig, withPadding, withCssBlock, withHighlight, withBandConfig, defaultColorPairs, Config
+    , withBrush, withBrushLabels, withBrushLabelsX, withBrushLabelsY, BrushingAppearanceConfig, BrushingLabelsConfig, defaultBrushingAppearance, defaultBrushingLabels
     )
+
+{-| Sparkline view functions. There are two basic chart types:
+
+  - [Line charts](#line)
+  - [Columns charts](#columns)
+
+These are conceptually very similar, except columns charts aggregate
+observations under a specified time interval, whereas line charts do not do any
+aggregation, but plot the observations according to a continuous time scale,
+and draw a line between them.
+
+The data to be charted must be a `List (Time.Posix, Float)`. For line charts,
+in most cases the X values should be unique, i.e. there should one Y
+for every X, but this is not enforced. For columns charts, this constraint is
+enforced by aggregating Y values over each given time interval, using a
+provided aggregation function (by default, `List.sum`). (If you want the same
+behavior for line charts, i.e. aggregating over time intervals, use the
+functions in the [Timeseries](Timeseries) module on your data first.)
+
+There are also functions for scaling multiple data series together, i.e.
+for creating 'facet' charts from small multiples:
+
+  - [Faceted line charts](#lineFacets)
+  - [Faceted columns charts](#columnsFacets)
+
+Please note that these functions do not themselves group your data into small
+multiples, nor do they position or label the series each chart represents.
+That is all up to you. The purpose of these chart functions is to render the
+charts scaling the X and Y dimensions of the series according to the parameters
+you specify.
+
+Finally, a function to create a single line chart with multiple series (with
+both X and Y dimensions scaled together) is provided:
+
+  - [Multiple-lines charts](#lines)
+
+
+# Highlighting
+
+For any chart type you can define which observations are _highlighted_.
+Often this is the last observation, or the min and/or the max, but there are
+some more options as well (see [Highlight](#Highlight)). Highlighted
+observations are rendered as circles (points) with a configurable color.
+
+
+# Brushing
+
+For any chart type except multiple-lines charts, you can provide and configure a
+an elm-visualization
+[Brush](https://package.elm-lang.org/packages/elm-visualization/latest/Brush)
+to allow interactive selection of observations. This can also be
+configured to display X and Y values at the start and end of the selection --
+interactive axis labels.
+
+
+# Access to highlighted and selected data
+
+In addition, functions are available that return charts together with
+the data that is currently highlighted and selected (brushed), to make it
+easy to build a separate view based on the current highlights/selections.
+
+
+# Examples
+
+See the examples directory for all features in action.
+
+
+# Reference
+
+
+## Single charts
+
+@docs line, lines, columns
+
+
+## Facet charts
+
+@docs lineFacets, columnsFacets
+
+
+## Charts together with selected/highlighted data
+
+@docs ChartData, lineData, lineFacetsData, columnsData, columnsFacetsData
+
+
+## Highlighting
+
+@docs Highlight
+
+
+## Basic configuration
+
+@docs lineConfig, columnsConfig, withPadding, withCssBlock, withHighlight, withBandConfig, defaultColorPairs, Config
+
+
+## Brushing configuration
+
+@docs withBrush, withBrushLabels, withBrushLabelsX, withBrushLabelsY, BrushingAppearanceConfig, BrushingLabelsConfig, defaultBrushingAppearance, defaultBrushingLabels
+
+-}
 
 import Brush exposing (Brush, OnBrush, OneDimensional)
 import Color exposing (Color)
@@ -63,6 +143,8 @@ import TypedSvg.Types as ST
 --------------------------------------------------------------------------------
 
 
+{-| Chart configuration. See above for usage examples.
+-}
 type Config msg
     = Config (ConfigData msg)
 
@@ -81,6 +163,27 @@ type alias ConfigData msg =
     }
 
 
+{-| Options for chart highlighting.
+
+  - `NoHighlight`: Don't highlight anything
+  - `HighlightLast`: Highlight the last observation
+  - `HighlightNegative`: Highlight all values less than 0
+  - `HighlightMin`: Highlight the minimum value in the series
+  - `HighlightMax`: Highlight the maximum value in the series
+  - `HighlightMinMax`: Highlight the minimum and maximum values in the series
+  - `HighlightPeaks`: Highlight positive peaks detected in the series, with
+    specified parameters.
+
+See [elm-visualization's peaks function](https://package.elm-lang.org/packages/gampleman/elm-visualization/latest/Statistics#peaks) for details on that calculation and the parameters needed.
+
+Example:
+
+    config : Config msg
+    config =
+        lineConfig Time.utc 100 50
+            |> withHighlight HighlightMax
+
+-}
 type Highlight
     = NoHighlight
     | HighlightLast
@@ -126,6 +229,16 @@ type alias AppearanceConfig =
     }
 
 
+{-| Configuration for the appearance of the brush overlay. Note that
+colors are specified using `TypedSvg.Type.Paint`.
+
+  - `area`: the fill color of the brushed area (or bars) of the chart
+  - `bounds`: the stroke color of the bounds lines of the brush
+  - `boundsDashed`: True if you want dashed bounds lines
+  - `highlight`: the color of bounds lines and labels when the observations are
+    highlighted
+
+-}
 type alias BrushingAppearanceConfig =
     { area : Paint
     , bounds : Paint
@@ -134,6 +247,15 @@ type alias BrushingAppearanceConfig =
     }
 
 
+{-| Configuration for the appearance of the brush overlay labels. Note that
+color is specified using `TypedSvg.Type.Paint`, and size is specified using
+`TypedSvg.Type.Length`.
+
+  - `color`: the text color of labels
+  - `size`: the size of label text
+  - `toString`: how to display Y values
+
+-}
 type alias BrushingLabelsConfig =
     { color : Paint
     , size : Length
@@ -248,14 +370,16 @@ cssBlock (Config c) =
 -- CONSTRUCTORS
 
 
-lineConfig : Time.Interval -> Time.Zone -> Float -> Float -> Config msg
-lineConfig tint tz w h =
+{-| Basic line chart configuration, given a Time.Zone, width, ahd height of chart.
+-}
+lineConfig : Time.Zone -> Float -> Float -> Config msg
+lineConfig tz w h =
     Config
         { width = w
         , height = h
         , padding = 0.0
         , timeZone = tz
-        , interval = tint
+        , interval = Time.Millisecond
         , aggregate = List.sum
         , highlight = NoHighlight
         , brushing = NoBrush
@@ -264,6 +388,22 @@ lineConfig tint tz w h =
         }
 
 
+{-| Basic columns chart configuration, given an aggregation function,
+a Time.Interval, a Time.Zone, the width, ahd the height of chart.
+
+Example for a columns chart aggregating by the mean of observations over
+month intervals:
+
+    config : Config msg
+    config =
+        columnsConfig
+            (\ys -> List.sum ys / (List.length ys |> toFloat))
+            Time.Month
+            Time.utc
+            100
+            50
+
+-}
 columnsConfig : (List Float -> Float) -> Time.Interval -> Time.Zone -> Float -> Float -> Config msg
 columnsConfig fn tint tz w h =
     Config
@@ -308,6 +448,10 @@ defaultCssConfig =
     }
 
 
+{-| Default brushing appearance options.
+Yellow selection area, 70% black solid (non-dashed) bounds lines, red when
+highlighted.
+-}
 defaultBrushingAppearance : BrushingAppearanceConfig
 defaultBrushingAppearance =
     { area = Paint <| Color.rgb 1 1 0
@@ -317,6 +461,10 @@ defaultBrushingAppearance =
     }
 
 
+{-| Default brushing labels options.
+White text (note labels appear over a solid-color filter), 80% rem,
+values are displayed as rounded numbers.
+-}
 defaultBrushingLabels : BrushingLabelsConfig
 defaultBrushingLabels =
     { color = Paint <| Color.rgb 1 1 1
@@ -325,6 +473,10 @@ defaultBrushingLabels =
     }
 
 
+{-| A default set of color-pairs for [multi-lines charts](#lines). Uses
+elm-visualization `category10` color scale, with line color at 70% alpha of
+the highlight color. Need a better default.
+-}
 defaultColorPairs : List ( Paint, Paint )
 defaultColorPairs =
     Scale.Color.category10
@@ -341,16 +493,45 @@ adjustColorAlpha a =
         >> Color.fromRgba
 
 
+{-| Set padding (in pixels) around chart
+-}
 withPadding : Float -> Config msg -> Config msg
 withPadding p (Config c) =
     Config { c | padding = p }
 
 
+{-| Set CSS block name (default is "sparklines")
+-}
+withCssBlock : String -> Config msg -> Config msg
+withCssBlock s (Config c) =
+    let
+        upd css =
+            { css | block = s }
+    in
+    Config { c | css = upd c.css }
+
+
+{-| Set [highlight](#Highlight) to include in chart
+-}
 withHighlight : Highlight -> Config msg -> Config msg
 withHighlight h (Config c) =
     Config { c | highlight = h }
 
 
+{-| Configure brushing in chart (with no labels)
+
+Example:
+
+    type Msg
+        = UpdateBrush Brush.OnBrush
+        | ...
+
+    config : Config Msg
+    config =
+        lineConfig Time.utc 100 50
+            |> withBrush UpdateBrush defaultBrushingAppearance
+
+-}
 withBrush : (OnBrush -> msg) -> BrushingAppearanceConfig -> Config msg -> Config msg
 withBrush onbrush bac (Config c) =
     let
@@ -360,6 +541,20 @@ withBrush onbrush bac (Config c) =
     Config { c | brushing = br }
 
 
+{-| Configure brushing in chart with both X and Y labels
+
+Example:
+
+    type Msg
+        = UpdateBrush Brush.OnBrush
+        | ...
+
+    config : Config Msg
+    config =
+        lineConfig Time.utc 100 50
+            |> withBrushLabels UpdateBrush defaultBrushingAppearance defaultBrushLabels
+
+-}
 withBrushLabels :
     (OnBrush -> msg)
     -> BrushingAppearanceConfig
@@ -370,6 +565,8 @@ withBrushLabels =
     withBrushLabelsHelp BrushLabels
 
 
+{-| Configure brushing in chart with only X labels
+-}
 withBrushLabelsX :
     (OnBrush -> msg)
     -> BrushingAppearanceConfig
@@ -380,6 +577,8 @@ withBrushLabelsX =
     withBrushLabelsHelp BrushLabelsX
 
 
+{-| Configure brushing in chart with only Y labels
+-}
 withBrushLabelsY :
     (OnBrush -> msg)
     -> BrushingAppearanceConfig
@@ -405,6 +604,9 @@ withBrushLabelsHelp constr onbrush bac blc (Config c) =
     Config { c | brushing = br }
 
 
+{-| Configure the band-scale used for columns charts. Refer to
+elm-visualization [Scale.BandConfig](https://package.elm-lang.org/packages/elm-visualization/gampleman.elm-visualization/latest/Scale#BandConfig) for details.
+-}
 withBandConfig : Scale.BandConfig -> Config msg -> Config msg
 withBandConfig bc (Config c) =
     Config { c | appearance = updateAppearanceBandConfig bc c.appearance }
@@ -425,6 +627,10 @@ updateAppearanceBandConfig bc ac =
 -- -----------------------------------------------------------------------------
 
 
+{-| Data type for chart and selected and highlighted data returned by
+[lineData](#lineData), [lineFacetsData](#lineFacetsData),
+[columnsData](#columnsData), and [columnsFacetsData](#columnsFacetsData).
+-}
 type alias ChartData msg =
     { chart : Svg msg
     , selected : Series
@@ -438,6 +644,22 @@ type alias ChartData msg =
 -- -----------------------------------------------------------------------------
 
 
+{-| Produce a list of line charts, scaling the given timeseries data together
+as specified by a [Facet.Scaling2d](Facet#Scaling2d), and passing in an
+optional brush for synchronized brushing across all charts. (See
+Example/Brush for an example of this).
+
+Example (fixed X and free Y scales):
+
+    charts : List (Svg msg)
+    charts =
+        lineFacets
+            { x = Facet.Fixed, y = Facet.Free }
+            config
+            (Just brush)
+            [ series1, series2, series3, ... ]
+
+-}
 lineFacets :
     Facet.Scaling2d
     -> Config msg
@@ -448,6 +670,9 @@ lineFacets s c mbrush seqs =
     lineFacetsData s c mbrush seqs |> List.map .chart
 
 
+{-| Same as [lineFacets](#lineFacets), but returning [ChartData](#ChartData)
+with highlighted and selected (brushed) data, in addition to the chart.
+-}
 lineFacetsData :
     Facet.Scaling2d
     -> Config msg
@@ -495,6 +720,21 @@ lineFacetsData s c mbrush seqs =
             List.map3 inner xscs yscs seqs
 
 
+{-| Produce a multi-line chart, with all given series scaled together on both
+X and Y dimensions, using the given list of color pairs for the line and
+highlight colors respectively of each series. (Note that colors are specified
+as `TypedSvg.Types.Paint`.)
+
+Example:
+
+    chart : Svg msg
+    chart =
+        lines defaultColorPairs config [series1, series2, series3, ... ]
+
+Note that neither brushing nor returning highlighted data is implemented
+currently for multi-line charts.
+
+-}
 lines :
     List ( Paint, Paint )
     -> Config msg
@@ -543,11 +783,24 @@ lines cpairs c seqs =
     svg w h inners
 
 
+{-| Produce a line chart, passing in an optional brush for interactive
+selection. (See Example/Brush for a full example of how to set up brushes).
+
+Example:
+
+    chart : Svg msg
+    chart =
+        line config (Just brush) series
+
+-}
 line : Config msg -> Maybe (Brush OneDimensional) -> Series -> Svg msg
 line c mbrush seq =
     lineData c mbrush seq |> .chart
 
 
+{-| Same as [line](#line), but returning [ChartData](#ChartData)
+with highlighted and selected (brushed) data, in addition to the chart.
+-}
 lineData : Config msg -> Maybe (Brush OneDimensional) -> Series -> ChartData msg
 lineData c mbrush seq =
     let
@@ -710,23 +963,42 @@ pointToCircle e fillcolor radius ( x, y ) =
 -- -----------------------------------------------------------------------------
 
 
-columnFacets :
+{-| Produce a list of columns charts, scaling the given timeseries data together
+as specified by a [Facet.Scaling2d](Facet#Scaling2d), and passing in an
+optional brush for synchronized brushing across all charts. (See
+Example/Brush for an example of this).
+
+Example (fixed X and free Y scales):
+
+    charts : List (Svg msg)
+    charts =
+        columnsFacets
+            { x = Facet.Fixed, y = Facet.Free }
+            config
+            (Just brush)
+            [ series1, series2, series3, ... ]
+
+-}
+columnsFacets :
     Facet.Scaling2d
     -> Config msg
     -> Maybe (Brush OneDimensional)
     -> List Series
     -> List (Svg msg)
-columnFacets s c mbrush seqs =
-    columnFacetsData s c mbrush seqs |> List.map .chart
+columnsFacets s c mbrush seqs =
+    columnsFacetsData s c mbrush seqs |> List.map .chart
 
 
-columnFacetsData :
+{-| Same as [columnsFacets](#columnsFacets), but returning [ChartData](#ChartData)
+with highlighted and selected (brushed) data, in addition to the chart.
+-}
+columnsFacetsData :
     Facet.Scaling2d
     -> Config msg
     -> Maybe (Brush OneDimensional)
     -> List Series
     -> List (ChartData msg)
-columnFacetsData s c mbrush seqs =
+columnsFacetsData s c mbrush seqs =
     let
         w =
             width c
@@ -779,11 +1051,24 @@ columnFacetsData s c mbrush seqs =
             List.map3 inner xscs yscs seqs_
 
 
+{-| Produce a columns chart, passing in an optional brush for interactive
+selection. (See Example/Brush for a full example of how to set up brushes).
+
+Example:
+
+    chart : Svg msg
+    chart =
+        columns config (Just brush) series
+
+-}
 columns : Config msg -> Maybe (Brush OneDimensional) -> Series -> Svg msg
 columns c mbrush data =
     columnsData c mbrush data |> .chart
 
 
+{-| Same as [columns](#columns), but returning [ChartData](#ChartData)
+with highlighted and selected (brushed) data, in addition to the chart.
+-}
 columnsData : Config msg -> Maybe (Brush OneDimensional) -> Series -> ChartData msg
 columnsData c mbrush data =
     let
@@ -1065,7 +1350,7 @@ isHighlightedTimeInterval fn tint tz x =
 -- SCALING
 -- -----------------------------------------------------------------------------
 {- Note: certain functions are used by both line and columns charts,
-   this type allows polymorphism.
+   this type allows polymorphism. It is only used internally.
 -}
 
 

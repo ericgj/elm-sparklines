@@ -1,26 +1,29 @@
 module Facet exposing
-    ( BandConfig
-    , ContinuousConfig
-    , Scale(..)
-    , Scale2d
-    , Scaling(..)
-    , Scaling2d
-    , bandScale
-    , continuousScale
-    , fixedBandScale
-    , fixedContinuousScale
-    , fixedLinearScale
-    , fixedTimeBandScale
-    , fixedTimeScale
-    , freeBandScales
-    , freeContinuousScales
-    , freeLinearScales
-    , freeTimeBandScales
-    , freeTimeScales
-    , linearScale
-    , timeBandScale
-    , timeScale
+    ( Scaling(..), Scaling2d, Scale(..), Scale2d
+    , linearScale, fixedLinearScale, freeLinearScales, timeScale, fixedTimeScale, freeTimeScales
+    , timeBandScale, fixedTimeBandScale, freeTimeBandScales
     )
+
+{-| Utilities for creating scales for multiple data series together (fixed) or
+separately (free). Used internally by [Sparklines](#Sparklines) facet views,
+but may be useful generally.
+
+
+# Basic types
+
+@docs Scaling, Scaling2d, Scale, Scale2d
+
+
+# Continuous scales
+
+@docs linearScale, fixedLinearScale, freeLinearScales, timeScale, fixedTimeScale, freeTimeScales
+
+
+# Band scales
+
+@docs timeBandScale, fixedTimeBandScale, freeTimeBandScales
+
+-}
 
 import Dict
 import Scale exposing (BandScale, ContinuousScale)
@@ -28,22 +31,31 @@ import Statistics
 import Time
 
 
+{-| A declarative type for how to scale data series
+-}
 type Scaling
     = Fixed
     | Free
 
 
+{-| A declarative type for how to scale x and y dimensions of data series
+-}
 type alias Scaling2d =
     { x : Scaling
     , y : Scaling
     }
 
 
+{-| Either a single fixed scale or a list of free scales. A result type.
+-}
 type Scale a
     = FixedScale a
     | FreeScales (List a)
 
 
+{-| Either a single fixed scale or a list of free scales, for x and y dimensions.
+A result type.
+-}
 type alias Scale2d x y =
     { x : Scale x
     , y : Scale y
@@ -61,6 +73,10 @@ type alias ContinuousConfig a comparable =
     }
 
 
+{-| Create a fixed linear scale from a list of arbitrary data series, given the
+accessor and the range. (The domain of fixed scales is from the minimum
+value of all the series to the maximum value of all the series.)
+-}
 fixedLinearScale :
     (a -> Float)
     -> ( Float, Float )
@@ -77,6 +93,10 @@ fixedLinearScale toFloat range seqs =
     fixedContinuousScale config toFloat range seqs
 
 
+{-| Create free linear scales from a list of arbitrary data series, given the
+accessor and the range. (The domain of free scales is the domain of each
+data series separately.)
+-}
 freeLinearScales :
     (a -> Float)
     -> ( Float, Float )
@@ -93,6 +113,9 @@ freeLinearScales toFloat range seqs =
     freeContinuousScales config toFloat range seqs
 
 
+{-| Create a linear scale from a single arbitrary data series, given the
+accessor and the range.
+-}
 linearScale :
     (a -> Float)
     -> ( Float, Float )
@@ -109,6 +132,10 @@ linearScale toFloat range seq =
     continuousScale config toFloat range seq
 
 
+{-| Create a fixed continuous time scale from a list of arbitrary data series,
+given the accessor and the range. (The domain of fixed scales is from the
+minimum value (time) of all the series to the maximum value of all the series.)
+-}
 fixedTimeScale :
     Time.Zone
     -> (a -> Time.Posix)
@@ -129,6 +156,10 @@ fixedTimeScale zone toTime range seqs =
     fixedContinuousScale config toTime range seqs
 
 
+{-| Create free continuous time scales from a list of arbitrary data series,
+given the accessor and the range. (The domain of free scales is the domain of
+each data series separately.)
+-}
 freeTimeScales :
     Time.Zone
     -> (a -> Time.Posix)
@@ -149,6 +180,9 @@ freeTimeScales zone toTime range seqs =
     freeContinuousScales config toTime range seqs
 
 
+{-| Create a continuous time scale from a single arbitrary data series, given
+the accessor and the range.
+-}
 timeScale :
     Time.Zone
     -> (a -> Time.Posix)
@@ -218,6 +252,17 @@ type alias BandConfig a comparable =
     }
 
 
+{-| Create a fixed time band scale from a list of arbitrary data series,
+given the
+[BandScale configuration](https://package.elm-lang.org/packages/gampleman/elm-visualization/latest/Scale#BandScale)
+, accessor and the range. (The domain of fixed time band scales is a list of
+times from the earliest in all the series to the latest in all the series.)
+
+Note that this function does _not_ change the data in any way, so you should
+pre-aggregate data by time interval and deal with possible gaps in intervals.
+The [Timeseries](#Timeseries) module has tools for doing this.
+
+-}
 fixedTimeBandScale :
     Scale.BandConfig
     -> (a -> Time.Posix)
@@ -234,6 +279,17 @@ fixedTimeBandScale bc fn range seqs =
     fixedBandScale c fn range seqs
 
 
+{-| Create free time band scales from a list of arbitrary data series,
+given the
+[BandScale configuration](https://package.elm-lang.org/packages/gampleman/elm-visualization/latest/Scale#BandScale)
+, accessor and the range. (The domain of free time band scales is a list of
+times from the earliest to the latest, within each series separately.)
+
+Note that this function does _not_ change the data in any way, so you should
+pre-aggregate data by time interval and deal with possible gaps in intervals.
+The [Timeseries](#Timeseries) module has tools for doing this.
+
+-}
 freeTimeBandScales :
     Scale.BandConfig
     -> (a -> Time.Posix)
@@ -250,6 +306,16 @@ freeTimeBandScales bc fn range seqs =
     freeBandScales c fn range seqs
 
 
+{-| Create a single time band scale from an arbitrary data series,
+given the
+[BandScale configuration](https://package.elm-lang.org/packages/gampleman/elm-visualization/latest/Scale#BandScale)
+, accessor and the range.
+
+Note that this function does _not_ change the data in any way, so you should
+pre-aggregate data by time interval and deal with possible gaps in intervals.
+The [Timeseries](#Timeseries) module has tools for doing this.
+
+-}
 timeBandScale :
     Scale.BandConfig
     -> (a -> Time.Posix)
