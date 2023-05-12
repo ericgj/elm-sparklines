@@ -11,6 +11,8 @@ module Example.Brush exposing
     )
 
 import Brush exposing (Brush, OnBrush, OneDimensional)
+import Color
+import DateFormat as DF
 import Facet exposing (Scaling(..))
 import Html exposing (..)
 import Html.Attributes exposing (style)
@@ -19,6 +21,7 @@ import Sparklines exposing (Highlight(..))
 import Time
 import Time.Extra as Time
 import Timeseries exposing (Observation, Series)
+import TypedSvg.Types exposing (Paint(..))
 
 
 type alias Model =
@@ -38,12 +41,18 @@ init frame =
     }
 
 
+
+{- Note: don't take padding into account, because the brush will be rendered
+   within the padding automatically.
+-}
+
+
 extent : Frame -> Brush.Extent
-extent { height, width, padding } =
-    { top = padding
-    , bottom = height - padding
-    , left = padding
-    , right = width - padding
+extent { height, width } =
+    { top = 0
+    , bottom = height
+    , left = 0
+    , right = width
     }
 
 
@@ -73,7 +82,8 @@ line tz data { frame, brush } =
                 |> Sparklines.withBrushLabels
                     UpdateBrush
                     Sparklines.defaultBrushingAppearance
-                    Sparklines.defaultBrushingLabels
+                |> Sparklines.formattingLabelsX year
+                |> Sparklines.coloringLabels (Paint <| Color.rgb 1 0.5 1)
 
         wstr =
             frame.width |> round |> String.fromInt
@@ -89,7 +99,7 @@ line tz data { frame, brush } =
         , ul [] <|
             List.map
                 (\obs ->
-                    li [] [ viewSelected tz chdata.highlighted obs ]
+                    li [] [ viewSelected year tz chdata.highlighted obs ]
                 )
                 chdata.selected
         ]
@@ -105,7 +115,7 @@ lineFacetsFreeY tz data { frame, brush } =
                 |> Sparklines.withBrushLabels
                     UpdateBrush
                     Sparklines.defaultBrushingAppearance
-                    Sparklines.defaultBrushingLabels
+                |> Sparklines.formattingLabelsX year
 
         wstr =
             frame.width |> round |> String.fromInt
@@ -132,7 +142,7 @@ columns tint tz data { frame, brush } =
                 |> Sparklines.withBrushLabels
                     UpdateBrush
                     Sparklines.defaultBrushingAppearance
-                    Sparklines.defaultBrushingLabels
+                |> Sparklines.formattingLabelsX monthShortYear
                 |> Sparklines.withBandConfig
                     { paddingInner = 0.3
                     , paddingOuter = 0.0
@@ -153,14 +163,25 @@ columns tint tz data { frame, brush } =
         , ul [] <|
             List.map
                 (\obs ->
-                    li [] [ viewSelected tz chdata.highlighted obs ]
+                    li [] [ viewSelected monthShortYear tz chdata.highlighted obs ]
                 )
                 chdata.selected
         ]
 
 
-viewSelected : Time.Zone -> Series -> Observation -> Html msg
-viewSelected tz hdata ( x, y ) =
+year : Time.Zone -> Time.Posix -> String
+year =
+    DF.format [ DF.yearNumber ]
+
+
+monthShortYear : Time.Zone -> Time.Posix -> String
+monthShortYear =
+    DF.format
+        [ DF.monthNameAbbreviated, DF.text " ", DF.yearNumberLastTwo ]
+
+
+viewSelected : (Time.Zone -> Time.Posix -> String) -> Time.Zone -> Series -> Observation -> Html msg
+viewSelected fmt tz hdata ( x, y ) =
     let
         e =
             Bem.init "examples-brush" |> (\b -> b.element "selected")
@@ -169,15 +190,12 @@ viewSelected tz hdata ( x, y ) =
             hdata
                 |> List.any
                     (\( x_, _ ) -> Time.posixToMillis x_ == Time.posixToMillis x)
-
-        parts =
-            Time.posixToParts tz x
     in
     div
         [ e |> elementIf "highlighted" ishigh ]
         [ span
             []
-            [ text <| String.fromInt <| parts.year ]
+            [ text <| fmt tz x ]
         , span
             []
             [ text ":" ]

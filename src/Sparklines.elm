@@ -4,7 +4,8 @@ module Sparklines exposing
     , ChartData, lineData, lineFacetsData, columnsData, columnsFacetsData
     , Highlight(..)
     , lineConfig, columnsConfig, withPadding, withCssBlock, withHighlight, withBandConfig, defaultColorPairs, Config
-    , withBrush, withBrushLabels, withBrushLabelsX, withBrushLabelsY, BrushingAppearanceConfig, BrushingLabelsConfig, defaultBrushingAppearance, defaultBrushingLabels
+    , withBrush, withBrushLabels, withBrushLabelsX, withBrushLabelsY, BrushingAppearanceConfig, BrushingLabelsConfig, defaultBrushingAppearance, formattingLabelsX, formattingLabelsY
+    , coloringLabels, sizingLabels
     )
 
 {-| Sparkline view functions. There are two basic chart types:
@@ -103,12 +104,13 @@ See the examples directory for all features in action.
 
 ## Brushing configuration
 
-@docs withBrush, withBrushLabels, withBrushLabelsX, withBrushLabelsY, BrushingAppearanceConfig, BrushingLabelsConfig, defaultBrushingAppearance, defaultBrushingLabels
+@docs withBrush, withBrushLabels, withBrushLabelsX, withBrushLabelsY, BrushingAppearanceConfig, BrushingLabelsConfig, defaultBrushingAppearance, formattingLabelsX, formattingLabelsY
 
 -}
 
 import Brush exposing (Brush, OnBrush, OneDimensional)
 import Color exposing (Color)
+import DateFormat as DF
 import Facet exposing (Scale(..), Scaling(..))
 import List.Extra as List
 import Path exposing (Path)
@@ -180,7 +182,7 @@ Example:
 
     config : Config msg
     config =
-        lineConfig Time.utc 100 50
+        lineConfig Time.Day Time.utc 100 50
             |> withHighlight HighlightMax
 
 -}
@@ -253,13 +255,17 @@ color is specified using `TypedSvg.Type.Paint`, and size is specified using
 
   - `color`: the text color of labels
   - `size`: the size of label text
-  - `toString`: how to display Y values
+  - `labelX`: how to display X (time) values
+  - `labelY`: how to display Y (float) values
+
+Note `labelX` uses the time zone specified in top-level Config.
 
 -}
 type alias BrushingLabelsConfig =
     { color : Paint
     , size : Length
-    , toString : Float -> String
+    , labelX : Time.Zone -> Time.Posix -> String
+    , labelY : Float -> String
     }
 
 
@@ -370,7 +376,7 @@ cssBlock (Config c) =
 -- CONSTRUCTORS
 
 
-{-| Basic line chart configuration, given a Time.Zone, width, ahd height of chart.
+{-| Basic line chart configuration, given a Time.Zone, width, and height of chart.
 -}
 lineConfig : Time.Zone -> Float -> Float -> Config msg
 lineConfig tz w h =
@@ -379,7 +385,7 @@ lineConfig tz w h =
         , height = h
         , padding = 0.0
         , timeZone = tz
-        , interval = Time.Millisecond
+        , interval = Time.Day
         , aggregate = List.sum
         , highlight = NoHighlight
         , brushing = NoBrush
@@ -389,7 +395,7 @@ lineConfig tz w h =
 
 
 {-| Basic columns chart configuration, given an aggregation function,
-a Time.Interval, a Time.Zone, the width, ahd the height of chart.
+a Time.Interval, a Time.Zone, the width, and the height of chart.
 
 Example for a columns chart aggregating by the mean of observations over
 month intervals:
@@ -465,12 +471,77 @@ defaultBrushingAppearance =
 White text (note labels appear over a solid-color filter), 80% rem,
 values are displayed as rounded numbers.
 -}
-defaultBrushingLabels : BrushingLabelsConfig
-defaultBrushingLabels =
+defaultBrushingLabels : Time.Interval -> BrushingLabelsConfig
+defaultBrushingLabels tint =
     { color = Paint <| Color.rgb 1 1 1
     , size = Rem 0.8
-    , toString = round >> String.fromInt
+    , labelX = defaultTimeFormat tint
+    , labelY = round >> String.fromInt
     }
+
+
+defaultTimeFormat : Time.Interval -> Time.Zone -> Time.Posix -> String
+defaultTimeFormat tint =
+    case tint of
+        Time.Year ->
+            DF.format [ DF.yearNumber ]
+
+        Time.Quarter ->
+            DF.format [ DF.text "Q", DF.quarterNumber, DF.text " ", DF.yearNumber ]
+
+        Time.Month ->
+            DF.format [ DF.monthNameAbbreviated, DF.text " ", DF.yearNumber ]
+
+        Time.Week ->
+            DF.format [ DF.text "W", DF.weekOfYearNumber, DF.text " ", DF.yearNumber ]
+
+        Time.Day ->
+            DF.format
+                [ DF.dayOfMonthFixed
+                , DF.text "-"
+                , DF.monthNameAbbreviated
+                , DF.text "-"
+                , DF.yearNumber
+                ]
+
+        Time.Hour ->
+            DF.format
+                [ DF.hourNumber, DF.amPmUppercase ]
+
+        Time.Minute ->
+            DF.format
+                [ DF.hourNumber, DF.text ":", DF.minuteFixed, DF.amPmUppercase ]
+
+        Time.Second ->
+            DF.format
+                [ DF.hourNumber
+                , DF.text ":"
+                , DF.minuteFixed
+                , DF.text ":"
+                , DF.secondFixed
+                , DF.amPmUppercase
+                ]
+
+        Time.Millisecond ->
+            DF.format
+                [ DF.hourNumber
+                , DF.text ":"
+                , DF.minuteFixed
+                , DF.text ":"
+                , DF.secondFixed
+                , DF.text "."
+                , DF.millisecondFixed
+                , DF.amPmUppercase
+                ]
+
+        _ ->
+            DF.format
+                [ DF.dayOfMonthFixed
+                , DF.text "-"
+                , DF.monthNameAbbreviated
+                , DF.text "-"
+                , DF.yearNumber
+                ]
 
 
 {-| A default set of color-pairs for [multi-lines charts](#lines). Uses
@@ -552,13 +623,12 @@ Example:
     config : Config Msg
     config =
         lineConfig Time.utc 100 50
-            |> withBrushLabels UpdateBrush defaultBrushingAppearance defaultBrushLabels
+            |> withBrushLabels UpdateBrush defaultBrushingAppearance
 
 -}
 withBrushLabels :
     (OnBrush -> msg)
     -> BrushingAppearanceConfig
-    -> BrushingLabelsConfig
     -> Config msg
     -> Config msg
 withBrushLabels =
@@ -570,7 +640,6 @@ withBrushLabels =
 withBrushLabelsX :
     (OnBrush -> msg)
     -> BrushingAppearanceConfig
-    -> BrushingLabelsConfig
     -> Config msg
     -> Config msg
 withBrushLabelsX =
@@ -582,7 +651,6 @@ withBrushLabelsX =
 withBrushLabelsY :
     (OnBrush -> msg)
     -> BrushingAppearanceConfig
-    -> BrushingLabelsConfig
     -> Config msg
     -> Config msg
 withBrushLabelsY =
@@ -593,15 +661,142 @@ withBrushLabelsHelp :
     (BrushingLabelsData msg -> Brushing msg)
     -> (OnBrush -> msg)
     -> BrushingAppearanceConfig
-    -> BrushingLabelsConfig
     -> Config msg
     -> Config msg
-withBrushLabelsHelp constr onbrush bac blc (Config c) =
+withBrushLabelsHelp constr onbrush bac (Config c) =
     let
         br =
-            constr { onBrush = onbrush, appearance = bac, labels = blc }
+            constr
+                { onBrush = onbrush
+                , appearance = bac
+                , labels = defaultBrushingLabels c.interval
+                }
     in
     Config { c | brushing = br }
+
+
+{-| Format time interval labels (x axis) with custom function.
+
+Note: The time zone in top-level Config is used to render labels.
+
+Most date/time formatting libraries should compose with this. Internally,
+[ryannhg/date-format](https://package.elm-lang.org/packages/ryannhg/date-format/latest)
+is used for default formats based on the given interval.
+
+Example:
+
+
+    yyyymmdd : Time.Zone -> Time.Posix -> String
+    yyyymmdd =
+        DateFormat.format
+            [ DateFormat.yearNumber
+            , DateFormat.monthFixed
+            , DateFormat.dayOfMonthFixed
+            ]
+
+    config : Config Msg
+    config =
+        lineConfig Time.utc 100 50
+            |> withBrushLabels UpdateBrush defaultBrushingAppearance
+            |> formattingLabelsX yyyymmdd
+
+-}
+formattingLabelsX : (Time.Zone -> Time.Posix -> String) -> Config msg -> Config msg
+formattingLabelsX fn (Config c) =
+    let
+        updBrushLabels bl =
+            { bl | labels = updBrushLabelsC bl.labels }
+
+        updBrushLabelsC blc =
+            { blc | labelX = fn }
+    in
+    case c.brushing of
+        BrushLabels bl ->
+            Config { c | brushing = BrushLabels <| updBrushLabels bl }
+
+        BrushLabelsX bl ->
+            Config { c | brushing = BrushLabelsX <| updBrushLabels bl }
+
+        BrushLabelsY bl ->
+            Config { c | brushing = BrushLabelsY <| updBrushLabels bl }
+
+        _ ->
+            Config c
+
+
+{-| Format labels for the y axis with custom function
+-}
+formattingLabelsY : (Float -> String) -> Config msg -> Config msg
+formattingLabelsY fn (Config c) =
+    let
+        updBrushLabels bl =
+            { bl | labels = updBrushLabelsC bl.labels }
+
+        updBrushLabelsC blc =
+            { blc | labelY = fn }
+    in
+    case c.brushing of
+        BrushLabels bl ->
+            Config { c | brushing = BrushLabels <| updBrushLabels bl }
+
+        BrushLabelsX bl ->
+            Config { c | brushing = BrushLabelsX <| updBrushLabels bl }
+
+        BrushLabelsY bl ->
+            Config { c | brushing = BrushLabelsY <| updBrushLabels bl }
+
+        _ ->
+            Config c
+
+
+{-| Set label size (in TypedSvg.Types.Length).
+-}
+sizingLabels : ST.Length -> Config msg -> Config msg
+sizingLabels sz (Config c) =
+    let
+        updBrushLabels bl =
+            { bl | labels = updBrushLabelsC bl.labels }
+
+        updBrushLabelsC blc =
+            { blc | size = sz }
+    in
+    case c.brushing of
+        BrushLabels bl ->
+            Config { c | brushing = BrushLabels <| updBrushLabels bl }
+
+        BrushLabelsX bl ->
+            Config { c | brushing = BrushLabelsX <| updBrushLabels bl }
+
+        BrushLabelsY bl ->
+            Config { c | brushing = BrushLabelsY <| updBrushLabels bl }
+
+        _ ->
+            Config c
+
+
+{-| Set label (background) color (in TypedSvg.Types.Paint).
+-}
+coloringLabels : ST.Paint -> Config msg -> Config msg
+coloringLabels p (Config c) =
+    let
+        updBrushLabels bl =
+            { bl | labels = updBrushLabelsC bl.labels }
+
+        updBrushLabelsC blc =
+            { blc | color = p }
+    in
+    case c.brushing of
+        BrushLabels bl ->
+            Config { c | brushing = BrushLabels <| updBrushLabels bl }
+
+        BrushLabelsX bl ->
+            Config { c | brushing = BrushLabelsX <| updBrushLabels bl }
+
+        BrushLabelsY bl ->
+            Config { c | brushing = BrushLabelsY <| updBrushLabels bl }
+
+        _ ->
+            Config c
 
 
 {-| Configure the band-scale used for columns charts. Refer to
@@ -690,9 +885,6 @@ lineFacetsData s c mbrush seqs =
         h =
             height c
 
-        brush =
-            viewBrush b (onBrush c) mbrush
-
         sc =
             lineScales s c seqs
 
@@ -701,7 +893,7 @@ lineFacetsData s c mbrush seqs =
                 d =
                     lineInnerData Nothing xsc_ ysc_ c mbrush seq_
             in
-            { chart = svg w h (d.chart :: brush)
+            { chart = svg w h [ d.chart ]
             , selected = d.selected
             , highlighted = d.highlighted
             }
@@ -827,11 +1019,8 @@ lineData c mbrush seq =
 
         inner =
             lineInnerData Nothing xsc ysc c mbrush seq
-
-        brush =
-            viewBrush b (onBrush c) mbrush
     in
-    { chart = svg w h (inner.chart :: brush)
+    { chart = svg w h [ inner.chart ]
     , selected = inner.selected
     , highlighted = inner.highlighted
     }
@@ -874,10 +1063,13 @@ lineInnerData mcpair xsc ysc c mbrush data =
                 |> scaledPoints ( 0, 0 ) (LineScale xsc) ysc
                 |> Shape.line Shape.linearCurve
 
+        brush =
+            viewBrush b (onBrush c) mbrush
+
         brushoverlay =
             mbrush
                 |> Maybe.andThen
-                    (\brush -> lineBrushOverlay b c xsc ysc brush highlighted data)
+                    (\br -> lineBrushOverlay b c xsc ysc br highlighted data)
 
         circles =
             highlightCircles
@@ -901,6 +1093,7 @@ lineInnerData mcpair xsc ysc c mbrush data =
                     , SA.fill PaintNone
                     ]
                     :: (brushoverlay |> Maybe.map .chart |> Maybe.withDefault (text ""))
+                    :: (brush |> Maybe.withDefault (text ""))
                     :: circles
                 )
     in
@@ -1107,16 +1300,8 @@ columnsData c mbrush data =
 
         inner =
             columnsInnerData h xsc ysc c mbrush data_
-
-        brush =
-            viewBrush b (onBrush c) mbrush
-
-        chart =
-            svg w
-                h
-                (inner.chart :: brush)
     in
-    { chart = chart
+    { chart = svg w h [ inner.chart ]
     , selected = inner.selected
     , highlighted = inner.highlighted
     }
@@ -1159,10 +1344,13 @@ columnsInnerData h xsc ysc c mbrush data =
         highlighted =
             data |> selectHighlights (highlight c)
 
+        brush =
+            viewBrush b (onBrush c) mbrush
+
         brushoverlay =
             mbrush
                 |> Maybe.andThen
-                    (\brush -> columnsBrushOverlay b c xsc ysc brush highlighted data)
+                    (\br -> columnsBrushOverlay b c xsc ysc br highlighted data)
 
         circles =
             highlightCircles
@@ -1182,6 +1370,7 @@ columnsInnerData h xsc ysc c mbrush data =
                     [ e |> element ]
                     (data |> List.map (columnInner ec cbar h pad xsc ysc highlighted))
                     :: (brushoverlay |> Maybe.map .chart |> Maybe.withDefault (text ""))
+                    :: (brush |> Maybe.withDefault (text ""))
                     :: circles
                 )
     in
@@ -1343,6 +1532,78 @@ isHighlightedTimeInterval fn tint tz x =
         (\( x_, _ ) ->
             fn tint tz x_ == fn tint tz x
         )
+
+
+highlightedLowerTimeBounds : Series -> Series -> List ( Maybe Time.Posix, Time.Posix )
+highlightedLowerTimeBounds hdata data =
+    data
+        |> List.map Tuple.first
+        |> listLowerBoundsBy Time.posixToMillis
+        |> List.filter (\( _, x0 ) -> List.any (\( x1, _ ) -> x0 == x1) hdata)
+
+
+highlightedUpperTimeBounds : Series -> Series -> List ( Time.Posix, Maybe Time.Posix )
+highlightedUpperTimeBounds hdata data =
+    data
+        |> List.map Tuple.first
+        |> listUpperBoundsBy Time.posixToMillis
+        |> List.filter (\( x0, _ ) -> List.any (\( x1, _ ) -> x0 == x1) hdata)
+
+
+isInLowerTimeBounds : Time.Posix -> List ( Maybe Time.Posix, Time.Posix ) -> Bool
+isInLowerTimeBounds x =
+    List.any
+        (\( mxmin, xmax ) ->
+            case mxmin of
+                Nothing ->
+                    Time.posixToMillis x <= Time.posixToMillis xmax
+
+                Just xmin ->
+                    Time.posixToMillis x
+                        <= Time.posixToMillis xmax
+                        && Time.posixToMillis x
+                        > Time.posixToMillis xmin
+        )
+
+
+isInUpperTimeBounds : Time.Posix -> List ( Time.Posix, Maybe Time.Posix ) -> Bool
+isInUpperTimeBounds x =
+    List.any
+        (\( xmin, mxmax ) ->
+            case mxmax of
+                Nothing ->
+                    Time.posixToMillis x >= Time.posixToMillis xmin
+
+                Just xmax ->
+                    Time.posixToMillis x
+                        >= Time.posixToMillis xmin
+                        && Time.posixToMillis x
+                        < Time.posixToMillis xmax
+        )
+
+
+listLowerBoundsBy : (a -> comparable) -> List a -> List ( Maybe a, a )
+listLowerBoundsBy fn list =
+    let
+        inner a ( acc, mprev ) =
+            ( ( mprev, a ) :: acc, Just a )
+    in
+    list
+        |> List.sortBy fn
+        |> List.foldl inner ( [], Nothing )
+        |> Tuple.first
+
+
+listUpperBoundsBy : (a -> comparable) -> List a -> List ( a, Maybe a )
+listUpperBoundsBy fn list =
+    let
+        inner a ( acc, mprev ) =
+            ( ( a, mprev ) :: acc, Just a )
+    in
+    list
+        |> List.sortBy fn
+        |> List.foldr inner ( [], Nothing )
+        |> Tuple.first
 
 
 
@@ -1558,7 +1819,7 @@ selectInTimeExtent ( tmin, tmax ) =
         )
 
 
-viewBrush : Bem.Block -> Maybe (OnBrush -> msg) -> Maybe (Brush OneDimensional) -> List (Svg msg)
+viewBrush : Bem.Block -> Maybe (OnBrush -> msg) -> Maybe (Brush OneDimensional) -> Maybe (Svg msg)
 viewBrush b mmsg mbrush =
     let
         e =
@@ -1586,8 +1847,6 @@ viewBrush b mmsg mbrush =
                 ]
     in
     Maybe.map2 inner mmsg mbrush
-        |> Maybe.map List.singleton
-        |> Maybe.withDefault []
 
 
 
@@ -1655,12 +1914,18 @@ lineBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
         mselectext =
             extentBrushed brush xsc
 
+        hlbounds =
+            highlightedLowerTimeBounds hdata data
+
+        hubounds =
+            highlightedUpperTimeBounds hdata data
+
         ( hlower, hupper ) =
             mselectext
                 |> Maybe.map
                     (Tuple.mapBoth
-                        (\x -> isHighlightedTimeInterval Time.ceiling tint tz x hdata)
-                        (\x -> isHighlightedTimeInterval Time.floor tint tz x hdata)
+                        (\x -> isInLowerTimeBounds x hlbounds)
+                        (\x -> isInUpperTimeBounds x hubounds)
                     )
                 |> Maybe.withDefault ( False, False )
 
@@ -1902,22 +2167,20 @@ brushOverlayBoundsAndLabels bapp ( mxlabels, mylabels ) b tint tz c xsc ysc hlow
                             ( ( hmin, hminl ), ( hmax, hmaxl ) )
                         ]
     in
-    selectedBoundsAndLabels tint tz xsc ysc selected
+    selectedBoundsAndLabels xsc ysc selected
         |> Maybe.map inner
 
 
 selectedBoundsAndLabels :
-    Time.Interval
-    -> Time.Zone
-    -> ChartScaleX
+    ChartScaleX
     -> ContinuousScale Float
     -> Series
     ->
         Maybe
-            ( ( ( Path, ( String, Float ) ), ( Path, ( Float, Float ) ) )
-            , ( ( Path, ( String, Float ) ), ( Path, ( Float, Float ) ) )
+            ( ( ( Path, ( Time.Posix, Float ) ), ( Path, ( Float, Float ) ) )
+            , ( ( Path, ( Time.Posix, Float ) ), ( Path, ( Float, Float ) ) )
             )
-selectedBoundsAndLabels tint tz xsc ysc data =
+selectedBoundsAndLabels xsc ysc data =
     let
         mext =
             data |> Statistics.extentBy (Tuple.first >> Time.posixToMillis)
@@ -1932,7 +2195,7 @@ selectedBoundsAndLabels tint tz xsc ysc data =
 
         inner ( x, y ) =
             ( ( scaledVerticalLinePoints xsc ysc ( x, y ) |> Shape.line Shape.linearCurve
-              , ( timeIntervalString tint tz x
+              , ( x
                 , convert x
                 )
               )
@@ -2026,9 +2289,9 @@ brushBoundsXLinesAndLabels :
     -> Config msg
     -> Bool
     -> Bool
-    -> ( ( Path, ( String, Float ) ), ( Path, ( String, Float ) ) )
+    -> ( ( Path, ( Time.Posix, Float ) ), ( Path, ( Time.Posix, Float ) ) )
     -> Svg msg
-brushBoundsXLinesAndLabels bapp bl filt hfilt b c hlower hupper ( ( p0, ( l0, x0 ) ), ( p1, ( l1, x1 ) ) ) =
+brushBoundsXLinesAndLabels bapp bl filt hfilt b c hlower hupper ( ( p0, ( t0, x0 ) ), ( p1, ( t1, x1 ) ) ) =
     let
         e =
             b.element "selected-bounds"
@@ -2073,6 +2336,15 @@ brushBoundsXLinesAndLabels bapp bl filt hfilt b c hlower hupper ( ( p0, ( l0, x0
 
         fsize =
             bl.size
+
+        tz =
+            timeZone c
+
+        l0 =
+            bl.labelX tz t0
+
+        l1 =
+            bl.labelX tz t1
     in
     S.g
         [ e |> elementOf "dim" "x" ]
@@ -2162,10 +2434,10 @@ brushBoundsYLinesAndLabels bapp bl filt hfilt b c hlower hupper ( ( p0, ( v0, y0
             0.0
 
         l0 =
-            v0 |> bl.toString
+            v0 |> bl.labelY
 
         l1 =
-            v1 |> bl.toString
+            v1 |> bl.labelY
 
         ymid =
             (h - pad * 2) / 2.0
