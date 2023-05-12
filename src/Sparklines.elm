@@ -1900,10 +1900,10 @@ lineBrushOverlayHelp :
 lineBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
     let
         e =
-            b.element "brush-overlay"
+            b.element "brush-domain"
 
         ea =
-            b.element "brush-overlay-area"
+            b.element "brush-domain-area"
 
         tint =
             timeInterval c
@@ -1956,12 +1956,12 @@ lineBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
         chart =
             S.g
                 [ e |> element ]
-                [ Path.element brusharea
+                (Path.element brusharea
                     [ ea |> element
                     , SA.fill bapp.area
                     ]
-                , brushlabels |> Maybe.withDefault (text "")
-                ]
+                    :: brushlabels
+                )
     in
     { chart = chart
     , selected = selected
@@ -2014,10 +2014,10 @@ columnsBrushOverlayHelp :
 columnsBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data =
     let
         e =
-            b.element "brush-overlay"
+            b.element "brush-domain"
 
         ec =
-            b.element "brush-overlay-column"
+            b.element "brush-domain-column"
 
         tint =
             timeInterval c
@@ -2065,7 +2065,7 @@ columnsBrushOverlayHelp bapp ( mxlabels, mylabels ) b c xsc ysc brush hdata data
             S.g
                 [ e |> element ]
                 (List.map (columnInner ec bapp.area h pad xsc ysc hdata) selected
-                    ++ (brushlabels |> Maybe.map List.singleton |> Maybe.withDefault [])
+                    ++ brushlabels
                 )
     in
     { chart = chart
@@ -2086,7 +2086,7 @@ brushOverlayBoundsAndLabels :
     -> Bool
     -> Bool
     -> Series
-    -> Maybe (Svg msg)
+    -> List (Svg msg)
 brushOverlayBoundsAndLabels bapp ( mxlabels, mylabels ) b tint tz c xsc ysc hlower hupper selected =
     let
         e =
@@ -2101,74 +2101,66 @@ brushOverlayBoundsAndLabels bapp ( mxlabels, mylabels ) b tint tz c xsc ysc hlow
         inner ( ( ( vmin, vminl ), ( hmin, hminl ) ), ( ( vmax, vmaxl ), ( hmax, hmaxl ) ) ) =
             case ( mxlabels, mylabels ) of
                 ( Nothing, Nothing ) ->
-                    S.g
-                        []
-                        [ brushBoundsLines bapp b "x" hlower hupper ( vmin, vmax )
-                        ]
+                    brushBoundsLines bapp b "x" hlower hupper ( vmin, vmax )
 
                 ( Just xlabels, Nothing ) ->
-                    S.g
-                        []
-                        [ brushLabelFilter (elementName e) bapp.bounds
-                        , brushLabelFilter (elementNameMod e "highlight") bapp.highlight
-                        , brushBoundsXLinesAndLabels
-                            bapp
-                            xlabels
-                            filt
-                            hfilt
-                            b
-                            c
-                            hlower
-                            hupper
-                            ( ( vmin, vminl ), ( vmax, vmaxl ) )
-                        ]
+                    [ brushLabelFilter (elementName e) bapp.bounds
+                    , brushLabelFilter (elementNameMod e "highlight") bapp.highlight
+                    , brushBoundsXLinesAndLabels
+                        bapp
+                        xlabels
+                        filt
+                        hfilt
+                        b
+                        c
+                        hlower
+                        hupper
+                        ( ( vmin, vminl ), ( vmax, vmaxl ) )
+                    ]
 
                 ( Nothing, Just ylabels ) ->
-                    S.g
-                        []
-                        [ brushLabelFilter (elementName e) bapp.bounds
-                        , brushLabelFilter (elementNameMod e "highlight") bapp.highlight
-                        , brushBoundsYLinesAndLabels
-                            bapp
-                            ylabels
-                            filt
-                            hfilt
-                            b
-                            c
-                            hlower
-                            hupper
-                            ( ( hmin, hminl ), ( hmax, hmaxl ) )
-                        ]
+                    [ brushLabelFilter (elementName e) bapp.bounds
+                    , brushLabelFilter (elementNameMod e "highlight") bapp.highlight
+                    , brushBoundsYLinesAndLabels
+                        bapp
+                        ylabels
+                        filt
+                        hfilt
+                        b
+                        c
+                        hlower
+                        hupper
+                        ( ( hmin, hminl ), ( hmax, hmaxl ) )
+                    ]
 
                 ( Just xlabels, Just ylabels ) ->
-                    S.g
-                        []
-                        [ brushLabelFilter (elementName e) bapp.bounds
-                        , brushLabelFilter (elementNameMod e "highlight") bapp.highlight
-                        , brushBoundsXLinesAndLabels
-                            bapp
-                            xlabels
-                            filt
-                            hfilt
-                            b
-                            c
-                            hlower
-                            hupper
-                            ( ( vmin, vminl ), ( vmax, vmaxl ) )
-                        , brushBoundsYLinesAndLabels
-                            bapp
-                            ylabels
-                            filt
-                            hfilt
-                            b
-                            c
-                            hlower
-                            hupper
-                            ( ( hmin, hminl ), ( hmax, hmaxl ) )
-                        ]
+                    [ brushLabelFilter (elementName e) bapp.bounds
+                    , brushLabelFilter (elementNameMod e "highlight") bapp.highlight
+                    , brushBoundsXLinesAndLabels
+                        bapp
+                        xlabels
+                        filt
+                        hfilt
+                        b
+                        c
+                        hlower
+                        hupper
+                        ( ( vmin, vminl ), ( vmax, vmaxl ) )
+                    , brushBoundsYLinesAndLabels
+                        bapp
+                        ylabels
+                        filt
+                        hfilt
+                        b
+                        c
+                        hlower
+                        hupper
+                        ( ( hmin, hminl ), ( hmax, hmaxl ) )
+                    ]
     in
     selectedBoundsAndLabels xsc ysc selected
         |> Maybe.map inner
+        |> Maybe.withDefault []
 
 
 selectedBoundsAndLabels :
@@ -2216,29 +2208,11 @@ brushBoundsLines :
     -> Bool
     -> Bool
     -> ( Path, Path )
-    -> Svg msg
+    -> List (Svg msg)
 brushBoundsLines bapp b dim hlower hupper ( p0, p1 ) =
     let
-        e =
-            b.element "selected-bounds"
-    in
-    S.g
-        [ e |> elementOf "dim" dim ]
-        (brushBoundsLinesInner bapp b dim hlower hupper ( p0, p1 ))
-
-
-brushBoundsLinesInner :
-    BrushingAppearanceConfig
-    -> Bem.Block
-    -> String
-    -> Bool
-    -> Bool
-    -> ( Path, Path )
-    -> List (Svg msg)
-brushBoundsLinesInner bapp b dim hlower hupper ( p0, p1 ) =
-    let
         ep =
-            b.element "selected-bound"
+            b.element "brush-domain-bound"
 
         str =
             bapp.bounds
@@ -2294,10 +2268,10 @@ brushBoundsXLinesAndLabels :
 brushBoundsXLinesAndLabels bapp bl filt hfilt b c hlower hupper ( ( p0, ( t0, x0 ) ), ( p1, ( t1, x1 ) ) ) =
     let
         e =
-            b.element "selected-bounds"
+            b.element "brush-domain-bounds"
 
         el =
-            b.element "selected-bound-label"
+            b.element "brush-label"
 
         pad =
             padding c
@@ -2348,7 +2322,7 @@ brushBoundsXLinesAndLabels bapp bl filt hfilt b c hlower hupper ( ( p0, ( t0, x0
     in
     S.g
         [ e |> elementOf "dim" "x" ]
-        (brushBoundsLinesInner bapp b "x" hlower hupper ( p0, p1 )
+        (brushBoundsLines bapp b "x" hlower hupper ( p0, p1 )
             ++ [ S.text_
                     [ el |> elementOfList [ ( "dim", "x" ), ( "type", "lower" ) ]
                     , el |> elementIf "highlight" hlower
@@ -2419,10 +2393,10 @@ brushBoundsYLinesAndLabels :
 brushBoundsYLinesAndLabels bapp bl filt hfilt b c hlower hupper ( ( p0, ( v0, y0 ) ), ( p1, ( v1, y1 ) ) ) =
     let
         e =
-            b.element "selected-bounds"
+            b.element "brush-domain-bounds"
 
         el =
-            b.element "selected-bound-label"
+            b.element "brush-label"
 
         pad =
             padding c
@@ -2481,7 +2455,7 @@ brushBoundsYLinesAndLabels bapp bl filt hfilt b c hlower hupper ( ( p0, ( v0, y0
     in
     S.g
         [ e |> elementOf "dim" "y" ]
-        (brushBoundsLinesInner bapp b "y" hlower hupper ( p0, p1 )
+        (brushBoundsLines bapp b "y" hlower hupper ( p0, p1 )
             ++ [ S.text_
                     [ el |> elementOfList [ ( "dim", "y" ), ( "type", "lower" ) ]
                     , el |> elementIf "highlight" hlower
