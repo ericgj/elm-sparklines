@@ -2,7 +2,7 @@
     "type": "package",
     "name": "ericgj/elm-sparklines",
     "summary": "Simple sparklines charts with optional brushing",
-    "license": "MIT",
+    "license": "BSD-3-Clause",
     "version": "1.0.0",
     "exposed-modules": [
         "Sparklines",
