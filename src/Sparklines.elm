@@ -4,8 +4,7 @@ module Sparklines exposing
     , ChartData, lineData, lineFacetsData, columnsData, columnsFacetsData
     , Highlight(..)
     , lineConfig, columnsConfig, withPadding, withCssBlock, withHighlight, withBandConfig, defaultColorPairs, Config
-    , withBrush, withBrushLabels, withBrushLabelsX, withBrushLabelsY, BrushingAppearanceConfig, BrushingLabelsConfig, defaultBrushingAppearance, formattingLabelsX, formattingLabelsY
-    , coloringLabels, sizingLabels
+    , withBrush, withBrushLabels, withBrushLabelsX, withBrushLabelsY, BrushingAppearanceConfig, BrushingLabelsConfig, defaultBrushingAppearance, formattingLabelsX, formattingLabelsY, coloringLabels, sizingLabels
     )
 
 {-| Sparkline view functions. There are two basic chart types:
@@ -104,7 +103,7 @@ See the examples directory for all features in action.
 
 ## Brushing configuration
 
-@docs withBrush, withBrushLabels, withBrushLabelsX, withBrushLabelsY, BrushingAppearanceConfig, BrushingLabelsConfig, defaultBrushingAppearance, formattingLabelsX, formattingLabelsY
+@docs withBrush, withBrushLabels, withBrushLabelsX, withBrushLabelsY, BrushingAppearanceConfig, BrushingLabelsConfig, defaultBrushingAppearance, formattingLabelsX, formattingLabelsY, coloringLabels, sizingLabels
 
 -}
 
@@ -684,7 +683,6 @@ Most date/time formatting libraries should compose with this. Internally,
 is used for default formats based on the given interval.
 
 Example:
-
 
     yyyymmdd : Time.Zone -> Time.Posix -> String
     yyyymmdd =
