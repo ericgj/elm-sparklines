@@ -16,8 +16,8 @@ Install from your elm project:
 $ elm install ericgj/elm-sparklines
 ```
 
-For color configuration, you will also need to install 
-`elm-community/typed-svg`, and use `TypedSvg.Types.Paint`.
+For color and label size configuration, you will also need to install 
+`elm-community/typed-svg`, and use `TypedSvg.Types.Paint` and `TypedSvg.Types.Length`.
 
 For brushing, you will need to install `gampleman/elm-visualization`, and 
 create and maintain a brush in your model as described in the

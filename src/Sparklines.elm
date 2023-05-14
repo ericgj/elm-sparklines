@@ -17,13 +17,14 @@ observations under a specified time interval, whereas line charts do not do any
 aggregation, but plot the observations according to a continuous time scale,
 and draw a line between them.
 
-The data to be charted must be a `List (Time.Posix, Float)`. For line charts,
-in most cases the X values should be unique, i.e. there should one Y
-for every X, but this is not enforced. For columns charts, this constraint is
-enforced by aggregating Y values over each given time interval, using a
-provided aggregation function (by default, `List.sum`). (If you want the same
-behavior for line charts, i.e. aggregating over time intervals, use the
-functions in the [Timeseries](Timeseries) module on your data first.)
+The data to be charted must be a `List (Time.Posix, Float)`, alias
+`Timeseries.Series`. For line charts, in most cases the X values should be
+unique, i.e. there should one Y for every X, but this is not enforced. For
+columns charts, this constraint is enforced by aggregating Y values over
+each given time interval, using a provided aggregation function (by default,
+`List.sum`). (If you want the same behavior for line charts, i.e. aggregating
+over time intervals, use the functions in the [Timeseries](Timeseries)
+module on your data first.)
 
 There are also functions for scaling multiple data series together, i.e.
 for creating 'facet' charts from small multiples:
@@ -55,7 +56,7 @@ observations are rendered as circles (points) with a configurable color.
 
 For any chart type except multiple-lines charts, you can provide and configure a
 an elm-visualization
-[Brush](https://package.elm-lang.org/packages/elm-visualization/latest/Brush)
+[Brush](https://package.elm-lang.org/packages/gampleman/elm-visualization/latest/Brush)
 to allow interactive selection of observations. This can also be
 configured to display X and Y values at the start and end of the selection --
 interactive axis labels.
@@ -181,7 +182,7 @@ Example:
 
     config : Config msg
     config =
-        lineConfig Time.Day Time.utc 100 50
+        lineConfig Time.utc 100 50
             |> withHighlight HighlightMax
 
 -}
@@ -747,7 +748,7 @@ formattingLabelsY fn (Config c) =
             Config c
 
 
-{-| Set label size (in TypedSvg.Types.Length).
+{-| Set label size (in `TypedSvg.Types.Length`).
 -}
 sizingLabels : ST.Length -> Config msg -> Config msg
 sizingLabels sz (Config c) =
@@ -772,7 +773,7 @@ sizingLabels sz (Config c) =
             Config c
 
 
-{-| Set label (background) color (in TypedSvg.Types.Paint).
+{-| Set label (background) color (in `TypedSvg.Types.Paint`).
 -}
 coloringLabels : ST.Paint -> Config msg -> Config msg
 coloringLabels p (Config c) =
@@ -798,7 +799,7 @@ coloringLabels p (Config c) =
 
 
 {-| Configure the band-scale used for columns charts. Refer to
-elm-visualization [Scale.BandConfig](https://package.elm-lang.org/packages/elm-visualization/gampleman.elm-visualization/latest/Scale#BandConfig) for details.
+elm-visualization [Scale.BandConfig](https://package.elm-lang.org/packages/elm-visualization/gampleman/elm-visualization/latest/Scale#BandConfig) for details.
 -}
 withBandConfig : Scale.BandConfig -> Config msg -> Config msg
 withBandConfig bc (Config c) =
